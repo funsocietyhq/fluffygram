@@ -27,6 +27,10 @@ abstract class UpdateNotifier {
   /// platforms get updated by their store or package manager.
   static Future<void> showUpdateAvailableBanner(BuildContext context) async {
     if (!PlatformInfos.isWindows || !AppSettings.checkForUpdates.value) return;
+    // Fork: an empty latestReleaseApiUrl = no release feed. The check stops
+    // here, so the app never asks upstream and never nags the group about a
+    // FluffyChat release they cannot install.
+    if (AppConfig.latestReleaseApiUrl.isEmpty) return;
 
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final l10n = L10n.of(context);

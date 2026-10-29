@@ -6,6 +6,7 @@
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/utils/file_description.dart';
+import 'package:fluffychat/utils/media_viewer_hero.dart';
 import 'package:fluffychat/utils/url_launcher.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
@@ -84,8 +85,8 @@ class ImageBubble extends StatelessWidget {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                Hero(
-                  tag: event.eventId,
+                telegramBubbleHero(
+                  eventId: event.eventId,
                   child: AppSettings.showThumbnailsInTimeline.value
                       ? MxcImage(
                           cacheKey: event.transactionId ?? event.eventId,

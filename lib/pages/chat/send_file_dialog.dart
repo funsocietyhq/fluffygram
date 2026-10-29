@@ -3,6 +3,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Portions of the layout, geometry and behaviour of this file are derived
+// from Telegram for Android, Copyright (C) 2017-2026 Telegram FZ-LLC,
+// licensed under the GNU GPL v. 2 or later, and were changed by this fork
+// in 2026 to implement the same interface in Flutter/Dart. The source file
+// and line are cited where they were used. See NOTICE.
+
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -20,6 +26,9 @@ import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/size_string.dart';
 import 'package:fluffychat/utils/start_push_foreground_service.dart';
+import 'package:fluffychat/utils/telegram_gif.dart'
+    show telegramMp4GifContentKey;
+import 'package:fluffychat/utils/telegram_gif_webp.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/adaptive_dialog_action.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/dialog_text_field.dart';
 import 'package:material_ui/material_ui.dart';
@@ -50,10 +59,25 @@ class SendFileDialog extends StatefulWidget {
 class SendFileDialogState extends State<SendFileDialog> {
   bool compress = true;
 
+  /// T128 : "Convert to gif" - a picked mp4 is transcoded to
+  /// an animated WebP at send time. Off by default, and only offered for a
+  /// video pick; no heuristic ever re-classes a clip on its own.
+  bool convertToGif = false;
+
   /// Images smaller than 20kb don't need compression.
   static const int minSizeToCompress = 20 * 1000;
 
   final TextEditingController _labelTextController = TextEditingController();
+
+  /// What a send adds next to the caption: the `org.fluffygram.gif` marker on a
+  /// Convert to gif clip, so the timeline row knows this mp4 is a GIF (T131).
+  static Map<String, dynamic>? _extraContent(String label, bool asGif) {
+    if (label.isEmpty && !asGif) return null;
+    return {
+      if (label.isNotEmpty) 'body': label,
+      if (asGif) telegramMp4GifContentKey: true,
+    };
+  }
 
   /// Mutable working copy of [SendFileDialog.files]. Editing an image replaces
   /// its entry with a new [XFile] whose bytes, mimetype and filename extension
@@ -111,8 +135,9 @@ class SendFileDialogState extends State<SendFileDialog> {
 
       for (var i = 0; i < _files.length; i++) {
         final xfile = _files[i];
-        final MatrixFile file;
+        MatrixFile file;
         MatrixImageFile? thumbnail;
+        var sendAsGif = false;
         final mimeType = xfile.mimeType ?? lookupMimeType(xfile.path);
 
         // Generate video thumbnail
@@ -129,10 +154,34 @@ class SendFileDialogState extends State<SendFileDialog> {
           final lengthResult = await Result.capture(xfile.length());
           final length = lengthResult.asValue?.value;
           scaffoldMessenger.clearSnackBars();
-          scaffoldMessenger.showLoadingSnackBar(l10n.compressingVideo);
-          file = await xfile.getVideoInfo(
-            compress: length != null && length > minSizeToCompress && compress,
-          );
+          // T131.1 : the Compress toggle now
+          // decides whether a video is re-encoded at all. Upstream
+          // `getVideoInfo()` ignores its own `compress` argument, so the choice
+          // is made here, by which function is called: Compress off (or a clip
+          // too small to bother with) ships the picked bytes.
+          final compressThisVideo = !convertToGif &&
+              length != null &&
+              length > minSizeToCompress &&
+              compress;
+          if (compressThisVideo) {
+            scaffoldMessenger.showLoadingSnackBar(l10n.compressingVideo);
+          }
+          // T131 (user, 2026-10-30, on the a build phone pass: "I just want
+          // to maintain quality with the original mp4"): a Convert to gif clip
+          // keeps its source bytes and is marked as a GIF. Telegram does the
+          // same - `isNewGifDocument()` (`MessageObject.java:6984-7003`) calls a
+          // `video/mp4` document a GIF when both sides are <= 1280 px, and never
+          // re-encodes one. `getVideoInfo()` is not an option here: it ignores
+          // its `compress` flag and runs LightCompressor on every mobile video
+          // send, so the paths that must keep quality read metadata with
+          // `getMediaInfo()` and take the bytes as they are.
+          file = compressThisVideo
+              ? await xfile.getVideoInfo()
+              : await xfile.getVideoFileUncompressed();
+          if (convertToGif) {
+            sendAsGif = true;
+            debugPrint('[Mp4Gif] kept ${file.bytes.length} B (${xfile.name})');
+          }
           scaffoldMessenger.clearSnackBars();
           if (!ForegroundServices.platformSupported) {
             scaffoldMessenger.showLoadingSnackBar(
@@ -148,6 +197,32 @@ class SendFileDialogState extends State<SendFileDialog> {
           ).detectFileType;
         }
 
+        // T123 (user, 2026-10-30: "The main goal is smaller gifs"; "It should
+        // only do the webp compression if the compression toggle is on when
+        // they upload it"): an animated GIF ships as animated WebP when the
+        // Compress toggle is on, and keeps its GIF bytes when the WebP came out
+        // bigger (measured 4.7x smaller on a photo-like clip, 3.4x bigger on a
+        // flat one - `the measurement log`). A converted file already
+        // carries its 1600 px cap, so matrix-dart's own resize path
+        // (`matrix_file.dart:229-253`) must not decode and re-encode the WebP a
+        // second time: that file sends with `shrinkImageMaxDimension: null`.
+        var shrinkImageMaxDimension = compress ? 1600 : null;
+        if (compress &&
+            file is MatrixImageFile &&
+            file.mimeType == 'image/gif') {
+          final webp = await telegramGifToWebp(file);
+          if (webp != null) {
+            file = webp;
+            shrinkImageMaxDimension = null;
+          }
+        }
+        // A GIF-marked clip sends its own bytes: matrix-dart's resize path
+        // (`matrix_file.dart:229-253`) must not touch them, so this file always
+        // sends with `shrinkImageMaxDimension: null`, at both call sites below.
+        if (sendAsGif) {
+          shrinkImageMaxDimension = null;
+        }
+
         if (file.bytes.length > maxUploadSize) {
           throw FileTooBigMatrixException(file.bytes.length, maxUploadSize);
         }
@@ -158,8 +233,8 @@ class SendFileDialogState extends State<SendFileDialog> {
           await widget.room.sendFileEvent(
             file,
             thumbnail: thumbnail,
-            shrinkImageMaxDimension: compress ? 1600 : null,
-            extraContent: label.isEmpty ? null : {'body': label},
+            shrinkImageMaxDimension: shrinkImageMaxDimension,
+            extraContent: _extraContent(label, sendAsGif),
             threadRootEventId: widget.threadRootEventId,
             threadLastEventId: widget.threadLastEventId,
           );
@@ -177,8 +252,8 @@ class SendFileDialogState extends State<SendFileDialog> {
           await widget.room.sendFileEvent(
             file,
             thumbnail: thumbnail,
-            shrinkImageMaxDimension: compress ? 1600 : null,
-            extraContent: label.isEmpty ? null : {'body': label},
+            shrinkImageMaxDimension: shrinkImageMaxDimension,
+            extraContent: _extraContent(label, sendAsGif),
           );
         }
       }
@@ -451,6 +526,41 @@ class SendFileDialogState extends State<SendFileDialog> {
                                   L10n.of(context).notSupportedOnThisDevice,
                                   style: theme.textTheme.labelSmall,
                                 ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  // T128: "Convert to gif" sits under Compress, and only for a
+                  // video pick - the transcode has nothing to do to a photo.
+                  if (uniqueFileType == 'video')
+                    Row(
+                      crossAxisAlignment: .center,
+                      children: [
+                        if ({
+                          TargetPlatform.iOS,
+                          TargetPlatform.macOS,
+                        }.contains(theme.platform))
+                          CupertinoSwitch(
+                            value: convertToGif,
+                            onChanged: (v) => setState(() => convertToGif = v),
+                          )
+                        else
+                          Switch.adaptive(
+                            value: convertToGif,
+                            onChanged: (v) => setState(() => convertToGif = v),
+                          ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: .min,
+                            crossAxisAlignment: .start,
+                            children: [
+                              Text(
+                                L10n.of(context).convertToGif,
+                                style: theme.textTheme.titleMedium,
+                                textAlign: TextAlign.left,
+                              ),
                             ],
                           ),
                         ),

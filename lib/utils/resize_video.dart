@@ -50,6 +50,33 @@ extension ResizeImage on XFile {
     );
   }
 
+  /// T131 : the clip's **own bytes** plus its metadata. Get
+  /// the metadata with `getMediaInfo()` and never call `compressVideo()`.
+  ///
+  /// Why this exists: `getVideoInfo()` above ignores its `compress` argument -
+  /// `compressVideo()` runs on every mobile video send whatever the caller
+  /// asks, at `VideoQuality.medium` and `targetSizeMb: 5`. A Convert to gif clip
+  /// is meant to keep the source quality a user asked for, so it takes this
+  /// path instead of that one.
+  Future<MatrixVideoFile> getVideoFileUncompressed() async {
+    MediaInfo? mediaInfo;
+    try {
+      if (PlatformInfos.isMobile || PlatformInfos.isMacOS) {
+        mediaInfo = await LightCompressor().getMediaInfo(path);
+      }
+    } catch (e, s) {
+      Logs().w('Error while fetching video media info', e, s);
+    }
+    return MatrixVideoFile(
+      bytes: await readAsBytes(),
+      name: name,
+      mimeType: mimeType,
+      width: mediaInfo?.width,
+      height: mediaInfo?.height,
+      duration: mediaInfo?.duration?.inMilliseconds,
+    );
+  }
+
   Future<MatrixImageFile?> getVideoThumbnail() async {
     if (!PlatformInfos.isMobile) return null;
 

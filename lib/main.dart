@@ -9,6 +9,7 @@ import 'dart:ui';
 
 import 'package:collection/collection.dart';
 import 'package:fluffychat/config/app_config.dart';
+import 'package:fluffychat/config/demo_mode.dart';
 import 'package:fluffychat/utils/client_manager.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/notification_background_handler.dart';
@@ -41,7 +42,9 @@ void main(List<String> args) => runZonedGuarded(() async {
   );
 
   isIntegrationTest = args.singleOrNull == 'integration_test';
-  if (PlatformInfos.isAndroid) {
+  // Demo mode starts no push isolate: that isolate registers this device with
+  // the push gateway, and a demo build must make zero network requests.
+  if (PlatformInfos.isAndroid && !kFluffyGramDemo) {
     final port = mainIsolateReceivePort = ReceivePort();
     IsolateNameServer.removePortNameMapping(AppConfig.mainIsolatePortName);
     IsolateNameServer.registerPortWithName(
@@ -82,6 +85,7 @@ void main(List<String> args) => runZonedGuarded(() async {
   // background fetch mode for processing push notifications. This is
   // currently only supported on Android.
   if (PlatformInfos.isAndroid &&
+      !kFluffyGramDemo &&
       AppLifecycleState.detached == WidgetsBinding.instance.lifecycleState) {
     await ForegroundServices.startService('background_push');
 

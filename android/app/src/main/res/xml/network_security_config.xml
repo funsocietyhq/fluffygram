@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026-Present Contributors to FluffyGram
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<!--
+  Android blocks cleartext http for apps targeting API 28+, and the video player
+  reads an encrypted attachment from this app's own byte server on the loopback
+  interface (ROADMAP T55): the Matrix attachment endpoint gives one encrypted
+  blob, so the decrypted bytes have to reach ExoPlayer over a seekable local
+  URL. Cleartext stays closed for every other host - this config permits
+  127.0.0.1 and localhost only.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

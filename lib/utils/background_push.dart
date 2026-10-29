@@ -11,7 +11,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
 
-//<GOOGLE_SERVICES>import 'package:fcm_shared_isolate/fcm_shared_isolate.dart';
+import 'package:fcm_shared_isolate/fcm_shared_isolate.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/main.dart';
 import 'package:fluffychat/utils/notification_background_handler.dart';
@@ -28,6 +28,26 @@ import '../config/app_config.dart';
 import '../config/setting_keys.dart';
 import '../widgets/matrix.dart';
 import 'platform_infos.dart';
+
+/// Where a client's pusher points. Telegram's model: the push gateway belongs to
+/// the server you signed up to, so an empty `pushNotificationsGatewayUrl` means
+/// "the homeserver this client logged into" - a box running Sygnal beside its
+/// Synapse answers at the spec path `/_matrix/push/v1/notify`. Upstream's shipped
+/// default was FluffyChat's own `https://push.fluffychat.im`, and that Sygnal
+/// answers 404 for an `app.fluffygram.app` pusher, which makes Synapse delete the
+/// pusher and leaves every member silently un-notified. A build that wants one
+/// gateway for the whole group pins the URL in that setting instead.
+String? pushGatewayUrl({
+  required String pinnedSetting,
+  required Uri? homeserver,
+}) {
+  if (pinnedSetting.isNotEmpty) return pinnedSetting;
+  if (homeserver == null) {
+    Logs().w('[Push] Client has no homeserver, cannot derive a push gateway');
+    return null;
+  }
+  return '${homeserver.origin}/_matrix/push/v1/notify';
+}
 
 class BackgroundPush {
   static BackgroundPush? _instance;
@@ -56,14 +76,17 @@ class BackgroundPush {
   final pendingTests = <String, Completer<void>>{};
   bool firebaseEnabled = false;
 
-  //<GOOGLE_SERVICES>final firebase = FcmSharedIsolate();
+  final firebase = FcmSharedIsolate();
 
   DateTime? lastReceivedPush;
 
   bool upAction = false;
 
   Future<void> _init() async {
-    //<GOOGLE_SERVICES>firebaseEnabled = true;
+    // Android only. fcm_shared_isolate has no Linux/Windows/macOS implementation,
+    // so a desktop build with this true dies in getToken() with a
+    // MissingPluginException; iOS has no Firebase pods in ios/Podfile.lock.
+    firebaseEnabled = PlatformInfos.isAndroid;
     try {
       mainIsolateReceivePort?.listen((message) async {
         try {
@@ -111,17 +134,17 @@ class BackgroundPush {
         onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
       );
       Logs().v('Flutter Local Notifications initialized');
-      //<GOOGLE_SERVICES>firebase.setListeners(
-      //<GOOGLE_SERVICES>  onMessage: (message) => pushHelper(
-      //<GOOGLE_SERVICES>    PushNotification.fromJson(
-      //<GOOGLE_SERVICES>       message.tryGetMap<String, Object>('data') ?? message,
-      //<GOOGLE_SERVICES>    ),
-      //<GOOGLE_SERVICES>    clients: clients,
-      //<GOOGLE_SERVICES>    l10n: l10n,
-      //<GOOGLE_SERVICES>    activeRoomId: matrix?.activeRoomId,
-      //<GOOGLE_SERVICES>    flutterLocalNotificationsPlugin: _flutterLocalNotificationsPlugin,
-      //<GOOGLE_SERVICES>  ),
-      //<GOOGLE_SERVICES>);
+      firebase.setListeners(
+        onMessage: (message) => pushHelper(
+          PushNotification.fromJson(
+            message.tryGetMap<String, Object>('data') ?? message,
+          ),
+          clients: clients,
+          l10n: l10n,
+          activeRoomId: matrix?.activeRoomId,
+          flutterLocalNotificationsPlugin: _flutterLocalNotificationsPlugin,
+        ),
+      );
       if (Platform.isAndroid) {
         await UnifiedPush.initialize(
           onNewEndpoint: _newUpEndpoint,
@@ -161,8 +184,8 @@ class BackgroundPush {
     String? gatewayUrl,
     String? token,
   }) async {
-    if (PlatformInfos.isIOS) {
-      //<GOOGLE_SERVICES>await firebase.requestPermission();
+    if (firebaseEnabled && PlatformInfos.isIOS) {
+      await firebase.requestPermission();
     }
     if (PlatformInfos.isAndroid && !isIntegrationTest) {
       _flutterLocalNotificationsPlugin
@@ -344,14 +367,14 @@ class BackgroundPush {
       return;
     }
     if (_fcmToken?.isEmpty ?? true) {
-      if (PlatformInfos.isIOS) {
-        //<GOOGLE_SERVICES>await firebase.requestPermission();
+      if (firebaseEnabled && PlatformInfos.isIOS) {
+        await firebase.requestPermission();
       }
       const max = 5;
       for (var i = 0; i < max; i++) {
         try {
           await Future.delayed(const Duration(seconds: 1));
-          //<GOOGLE_SERVICES>_fcmToken = await firebase.getToken();
+          _fcmToken = await firebase.getToken();
           if (_fcmToken != null) break;
         } catch (e, s) {
           Logs().w(
@@ -368,7 +391,10 @@ class BackgroundPush {
     }
     await setupPusher(
       client: client,
-      gatewayUrl: AppSettings.pushNotificationsGatewayUrl.value,
+      gatewayUrl: pushGatewayUrl(
+        pinnedSetting: AppSettings.pushNotificationsGatewayUrl.value,
+        homeserver: client.homeserver,
+      ),
       token: _fcmToken,
     );
   }

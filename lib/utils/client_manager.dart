@@ -5,10 +5,12 @@
 
 import 'package:collection/collection.dart';
 import 'package:fluffychat/config/app_config.dart';
+import 'package:fluffychat/config/demo_mode.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/custom_http_client.dart';
 import 'package:fluffychat/utils/custom_image_resizer.dart';
+import 'package:fluffychat/utils/demo/demo_seed.dart';
 import 'package:fluffychat/utils/init_with_restore.dart';
 import 'package:fluffychat/utils/matrix_live_kit_calls/matrix_live_kit_call_member.dart';
 import 'package:fluffychat/utils/notification_background_handler.dart';
@@ -29,6 +31,19 @@ abstract class ClientManager {
     bool initialize = true,
     required SharedPreferences store,
   }) async {
+    // Demo mode (FLUFFYGRAM_DEMO, added 2026-10-24): the app runs on one seeded
+    // client. No client names are read back from the store, no session backup is
+    // written, and `buildDemoClient()` runs its own `init()` - so the whole
+    // account-restore path of `initWithRestore()` is skipped. The client is
+    // logged in, which is why the routes open the chat list and the chat page
+    // instead of the intro page.
+    if (kFluffyGramDemo) {
+      // The draft row and the sticker tray read the shared store, so they
+      // are seeded before the client is returned.
+      await seedDemoLocalState(store);
+      final demoClient = await buildDemoClient();
+      return <Client>[demoClient];
+    }
     final clientNames = <String>{};
     try {
       final clientNamesList = store.getStringList(clientNamespace) ?? [];

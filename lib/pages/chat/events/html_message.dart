@@ -3,6 +3,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Portions of the layout, geometry and behaviour of this file are derived
+// from Telegram for Android, Copyright (C) 2017-2026 Telegram FZ-LLC,
+// licensed under the GNU GPL v. 2 or later, and were changed by this fork
+// in 2026 to implement the same interface in Flutter/Dart. The source file
+// and line are cited where they were used. See NOTICE.
+
 import 'package:collection/collection.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:fluffychat/config/setting_keys.dart';
@@ -21,6 +27,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:matrix/matrix.dart';
 
 import '../../../utils/url_launcher.dart';
+import 'bubble_shape.dart';
 
 class HtmlMessage extends StatelessWidget {
   final String html;
@@ -32,6 +39,19 @@ class HtmlMessage extends StatelessWidget {
   final String? eventId;
   final Set<Event>? checkboxCheckedEvents;
 
+  /// Drawn inline after the last character of the message, on its line:
+  /// Telegram's timestamp and tick glyphs inside the bubble.
+  final Widget? inlineMeta;
+
+  /// The box that meta takes at the end of the text. The text span reserves it,
+  /// so the last line wraps around the meta and the meta is pinned to the
+  /// bottom-right corner of the text block - the bubble's inner right edge,
+  /// which is where a user's captures put it (`11:13 AM`). With no reserve
+  /// the meta is a plain inline span: a time that does not fit on the last
+  /// line moves to a line of its own at the LEFT edge, which is the bug the
+  /// first device render showed on every incoming text bubble.
+  final Size? inlineMetaReserve;
+
   const HtmlMessage({
     super.key,
     required this.html,
@@ -42,6 +62,8 @@ class HtmlMessage extends StatelessWidget {
     required this.onOpen,
     this.eventId,
     this.checkboxCheckedEvents,
+    this.inlineMeta,
+    this.inlineMetaReserve,
   });
 
   /// Keep in sync with: https://spec.matrix.org/latest/client-server-api/#mroommessage-msgtypes
@@ -592,13 +614,71 @@ class HtmlMessage extends StatelessWidget {
     final span = _renderHtml(element, context);
     final style = TextStyle(fontSize: fontSize, color: textColor);
 
-    if (maxLines == null) {
-      return Text.rich(
-        span,
-        style: style,
-        selectionColor: textColor.withAlpha(128),
-      );
-    }
+    // Telegram puts the timestamp and the tick glyphs **inside** the bubble,
+    // on the last line of the text. Appending them as an inline widget span
+    // makes the text wrap around them, so they can never overlap the text.
+    final meta = inlineMeta;
+    // The meta in the text flow: it shares the last text line. Used by the
+    // collapsed preview of a long message, which clips the text and cannot
+    // carry a corner overlay.
+    final metaInFlow = meta == null
+        ? null
+        : WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: Padding(
+              padding: const EdgeInsets.only(
+                left: TelegramBubbleGeometry.timestampInlineGap,
+              ),
+              child: meta,
+            ),
+          );
+    // The meta's box, empty: it reserves the room the corner overlay draws in (its
+    // own width plus the gutter and the edge margin Telegram's reserve charges),
+    // on the last line when the text leaves room for it and on a line of its
+    // own when it does not.
+    final metaReserve = meta == null || inlineMetaReserve == null
+        ? null
+        : WidgetSpan(
+            alignment: PlaceholderAlignment.bottom,
+            child: SizedBox(
+              width: inlineMetaReserve!.width,
+              height: inlineMetaReserve!.height,
+            ),
+          );
+    final rootSpan = switch ((metaReserve, metaInFlow)) {
+      (final WidgetSpan reserve, _) => TextSpan(children: [span, reserve]),
+      (null, final WidgetSpan inFlow) => TextSpan(children: [span, inFlow]),
+      (null, null) => span,
+    };
+
+    // A text that is shown in full carries its meta in the bottom-right corner
+    // of the text block. The reserved box is the last thing in the text flow,
+    // so the right edge of the text block is its right edge. The reserve box
+    // carries Telegram's gutter and edge margin, so the meta sits
+    // `timestampEdgeMargin` (7.2 dp, phone) inside that edge on either side -
+    // not flush with it (`ChatMessageCell.java:3396` reserve, phone 47.2 dp).
+    Widget withCornerMeta(Widget text) =>
+        meta == null || inlineMetaReserve == null
+        ? text
+        : Stack(
+            children: [
+              text,
+              PositionedDirectional(
+                end: TelegramBubbleGeometry.timestampEdgeMargin,
+                bottom: 0,
+                child: meta,
+              ),
+            ],
+          );
+
+    Widget textInFlow() => Text.rich(
+      rootSpan,
+      style: style,
+      selectionColor: textColor.withAlpha(128),
+    );
+
+    if (maxLines == null) return withCornerMeta(textInFlow());
 
     // Heuristic: if plain text has enough newlines or length, it will overflow.
     final plainText = element.text;
@@ -606,16 +686,11 @@ class HtmlMessage extends StatelessWidget {
     final likelyOverflows =
         lineCount > maxLines || plainText.length > maxLines * 50;
 
-    if (!likelyOverflows) {
-      return Text.rich(
-        span,
-        style: style,
-        selectionColor: textColor.withAlpha(128),
-      );
-    }
+    // Not collapsed: the whole message is visible, so the corner overlay works.
+    if (!likelyOverflows) return withCornerMeta(textInFlow());
 
     return _CollapsibleText(
-      span: span,
+      span: metaInFlow == null ? span : TextSpan(children: [span, metaInFlow]),
       style: style,
       maxLines: maxLines,
       textColor: textColor,

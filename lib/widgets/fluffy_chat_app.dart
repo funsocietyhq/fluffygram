@@ -7,6 +7,7 @@ import 'dart:developer';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:fluffychat/config/app_config.dart';
+import 'package:fluffychat/config/demo_mode.dart';
 import 'package:fluffychat/config/routes.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
@@ -20,6 +21,7 @@ import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/custom_scroll_behaviour.dart';
+import '../utils/demo/demo_seed.dart';
 import 'matrix.dart';
 
 class FluffyChatApp extends StatelessWidget {
@@ -47,6 +49,10 @@ class FluffyChatApp extends StatelessWidget {
   // the current path.
   static final GoRouter router = GoRouter(
     routes: AppRoutes.routes,
+    // Demo mode opens straight on the seeded group chat; `intro_page` and
+    // `sign_in` are never reached, and the login redirect on `/rooms` is
+    // satisfied because the demo client is logged in.
+    initialLocation: kFluffyGramDemo ? demoInitialRoute : '/',
     debugLogDiagnostics: true,
     redirect: (context, state) {
       // Workaround for content sharings passed to go router:
@@ -105,17 +111,30 @@ class FluffyChatApp extends StatelessWidget {
         ],
         supportedLocales: L10n.supportedLocales,
         routerConfig: router,
-        builder: (context, child) => AppLockWidget(
-          pincode: appLockSettings.pincode,
-          useBiometrics: appLockSettings.useBiometrics,
-          isLoggedIn: clients.any((client) => client.isLogged()),
-          // Need a navigator above the Matrix widget for
-          // displaying dialogs
-          child: Matrix(
-            clients: clients,
-            store: store,
-            child: CallOverlay(
-              child: testWidget ?? child ?? const SizedBox.shrink(),
+        builder: (context, child) => MediaQuery(
+          // Telegram's model (user finding 28): Android's system font-size
+          // setting scales nothing in Telegram - a 16 is a 16 on every
+          // surface. Flutter multiplies every Text by that scaler wherever
+          // the fork does not pin it, which put the chat header 10 percent
+          // above Telegram's identical title words on a user's phone
+          // (identical header words measured 43 px against 39 and 43 against 39). The root pin
+          // makes the fork's own Chat appearance -> Text size slider the
+          // only multiplier, on every surface.
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(AppSettings.fontSizeFactor.value),
+          ),
+          child: AppLockWidget(
+            pincode: appLockSettings.pincode,
+            useBiometrics: appLockSettings.useBiometrics,
+            isLoggedIn: clients.any((client) => client.isLogged()),
+            // Need a navigator above the Matrix widget for
+            // displaying dialogs
+            child: Matrix(
+              clients: clients,
+              store: store,
+              child: CallOverlay(
+                child: testWidget ?? child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         ),

@@ -43,16 +43,9 @@ class ParticipantListItem extends StatelessWidget {
       onTap: () => showMemberActionsPopupMenu(context: context, user: user),
       title: Row(
         children: <Widget>[
-          if (user.room.client.userDeviceKeys[user.id]?.masterKey?.verified ==
-              true)
-            Padding(
-              padding: const EdgeInsets.only(right: 2.0),
-              child: Icon(
-                Icons.verified,
-                color: Theme.of(context).colorScheme.primary,
-                size: 16,
-              ),
-            ),
+          // T11 finding 2 (user rule 2026-10-26): no glyph in front of a
+          // member's display name on the participants page. Telegram draws
+          // the name at the avatar edge with nothing before it.
           Expanded(
             child: Text(
               user.calcDisplayname(),

@@ -1,0 +1,200 @@
+name: Release
+# One push of a `v<N>` tag builds the three platforms and publishes a release.
+# Owner decision, 2026-10-30: "The public repo should have CI moving forward which
+# creates the releases automatically for iOS, Linux, and Android".
+#
+# Secrets this workflow needs (Settings -> Secrets and variables -> Actions):
+#   ANDROID_KEYSTORE_B64   base64 of the release keystore - the same keystore the
+#                          installed phones already trust, so they update in place
+#   KEYSTORE_PASSWORD      store and key password (they are the same value here)
+#   KEY_ALIAS              the keystore alias
+#   GOOGLE_SERVICES_JSON   the whole android/app/google-services.json. The Firebase
+#                          project id lives inside that secret and never in this file;
+#                          without it Gradle skips the google-services plugin and the
+#                          APK ships with no FCM token and therefore no pusher.
+#   PUSH_GATEWAY_URL       https://<gateway-host>/_matrix/push/v1/notify?s=<token>
+#                          Synapse rejects a pusher URL without that exact path.
+# No secret may be echoed. Never `set -x` around the secret steps.
+on:
+  push:
+    tags:
+      - "v[0-9]+"
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: "3.47.8" # upstream's pin in .fvmrc
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: dtolnay/rust-toolchain@stable
+      # No SDK install step: upstream's own release CI has none. `compileSdk = 37` and
+      # NDK 27.0.12077973 are fetched by the Gradle Android plugin on the runner, whose
+      # image carries the accepted licences. An explicit `sdkmanager` step tried to
+      # install the preview package itself and died on its licence prompt.
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: The signing key must be present - an unsigned APK cannot update in place
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ] \
+             || [ -z "$KEY_ALIAS" ]; then
+            echo "::error::ANDROID_KEYSTORE_B64, KEYSTORE_PASSWORD and KEY_ALIAS must all be"
+            echo "set, or the release APK ships unsigned and the group's phones cannot update"
+            echo "in place over the builds they hold (the signing cert is 86d04fa3...)."
+            exit 1
+          fi
+      - name: The gitignored build inputs
+        run: |
+          # An EMPTY google-services.json is worse than none: android/app/build.gradle.kts
+          # applies the google-services plugin whenever the file exists, and the plugin then
+          # dies parsing it. So the file is written only when the secret carries it.
+          if [ -n "${GOOGLE_SERVICES_JSON}" ]; then
+            printf '%s' "${GOOGLE_SERVICES_JSON}" > android/app/google-services.json
+          fi
+          printf '%s' "${ANDROID_KEYSTORE_B64}" | base64 -d > /tmp/release-key.jks
+          {
+            echo "storeFile=/tmp/release-key.jks"
+            echo "storePassword=${KEYSTORE_PASSWORD}"
+            echo "keyPassword=${KEYSTORE_PASSWORD}"
+            echo "keyAlias=${KEY_ALIAS}"
+          } > android/key.properties
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      - run: flutter pub get
+      - run: flutter gen-l10n
+      # No --split-per-abi: android/app/build.gradle.kts:82 clears Flutter's abiFilters and
+      # adds arm64-v8a, and Gradle refuses an ndk abiFilter next to split abi filters
+      # ("Conflicting configuration : 'arm64-v8a' in ndk abiFilters cannot be present when
+      # splits abi filters are set"). One ABI, one APK: the command notes/build48.sh runs.
+      - run: |
+          # Shape check, not just presence: a set-but-wrong secret (the token alone, where the
+          # whole URL is needed) builds an APK with no pusher and no error screen. Only the
+          # length and two booleans are printed - Actions masks the value itself.
+          echo "push gateway secret: ${#PUSH_GATEWAY_URL} chars, https prefix = $(case "$PUSH_GATEWAY_URL" in https://*) echo yes;; *) echo no;; esac), token marker = $(case "$PUSH_GATEWAY_URL" in *'notify?s='*) echo yes;; *) echo no;; esac)"
+          # PUSH_GATEWAY_URL must be a --dart-define, not an environment variable:
+          # setting_keys.dart reads it with String.fromEnvironment, and Dart ignores the
+          # process environment. An env var alone produced an APK with no push gateway, so
+          # the phone registered its pusher at the homeserver's own /notify (Element's
+          # Sygnal), which 404s our app_id and Synapse deletes the pusher: no notifications,
+          # no error screen. Actions masks secret values in the log, so the token is safe here.
+          if [ -n "${PUSH_GATEWAY_URL:-}" ]; then
+            flutter build apk --release --target-platform android-arm64 \
+              --dart-define=PUSH_GATEWAY_URL="${PUSH_GATEWAY_URL}"
+          else
+            echo "::warning::No PUSH_GATEWAY_URL secret - this APK registers no pusher and cannot notify"
+            flutter build apk --release --target-platform android-arm64
+          fi
+        env:
+          # Without this block the variable is simply empty in the step, and the build silently
+          # takes the no-gateway branch. Measured 2026-10-30: run 40965892387 printed the warning
+          # and built an APK whose libapp.so carried no gateway.
+          PUSH_GATEWAY_URL: ${{ secrets.PUSH_GATEWAY_URL }}
+      - name: The APK must carry Firebase and the push gateway
+        run: |
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          # The push check must not stop at the path. `/_matrix/push/v1/notify` also sits in
+          # the Dart source as the homeserver fallback, so a path grep passes an APK that
+          # carries no gateway at all - measured on the CI APK of 2026-10-30, which matched
+          # the path twice and had no gateway in it. `?s=` is the gateway URL's token marker,
+          # which the fallback never has.
+          unzip -p "$apk" resources.arsc | grep -ac gcm_defaultSenderId || exit 1
+          unzip -p "$apk" lib/arm64-v8a/libapp.so | grep -acF _matrix/push/v1/notify?s= || exit 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Fluffygram.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  linux:
+    # Pinned to the image upstream builds Linux on (its release.yaml build_linux job):
+    # that image's package set is the one the plugin CMakeLists finds.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: GTK and the native deps the Linux shell needs
+        # The package list is upstream's own (release.yaml, build_linux): Ubuntu 24.04
+        # ships webkit 4.1, not 4.0, and desktop_webview_window tries 4.1 first.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl clang cmake ninja-build pkg-config libgtk-3-dev \
+            libblkid-dev liblzma-dev libjsoncpp-dev cmake-data libsecret-1-dev \
+            libsecret-1-0 librhash0 libssl-dev libwebkit2gtk-4.1-dev libpulse-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter gen-l10n
+      - run: flutter build linux --release
+      - run: tar -C build/linux/x64/release/bundle -czf Fluffygram-linux-x64.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Fluffygram-linux-x64.tar.gz
+          path: Fluffygram-linux-x64.tar.gz
+
+  ios:
+    # Unsigned on purpose: no Apple certificate or provisioning profile lives in CI.
+    # The artifact proves the fork builds for iOS; installing it stays a manual step.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      # The Xcode pin is upstream's own (integrate.yaml build_debug_ios). The image's default
+      # Xcode is too old for a Network.framework API a dependency uses: without the switch the
+      # Swift compile dies "Value of type 'NWPath' has no member 'isUltraConstrained'".
+      - name: Use the Xcode upstream builds iOS with
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app
+      - run: flutter pub get
+      - run: flutter gen-l10n
+      - run: flutter build ios --release --no-codesign
+      - run: cd build/ios/iphoneos && zip -qr ../../../Fluffygram-ios-unsigned.zip Runner.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Fluffygram-ios-unsigned.zip
+          path: Fluffygram-ios-unsigned.zip
+
+  release:
+    needs: [android, linux, ios]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "Fluffygram*"
+          merge-multiple: true
+      # Rename the Android artifact to the fixed asset name the group installs.
+      - run: |
+          # The Android job uploads build/app/outputs/flutter-apk/app-release.apk (there is
+          # no app-arm64-v8a-release.apk: one ABI, no --split-per-abi). A wrong name here
+          # loses the APK from the release silently - measured on release v2, which published
+          # the Linux and iOS artifacts only.
+          mv app-release.apk Fluffygram.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Fluffygram.apk
+            Fluffygram-linux-x64.tar.gz
+            Fluffygram-ios-unsigned.zip
+          generate_release_notes: true

@@ -16,8 +16,11 @@ class StartChatFab extends StatelessWidget {
   Widget build(BuildContext context) {
     return FloatingActionButton.extended(
       heroTag: 'start_chat_fab',
-      backgroundColor: Theme.of(context).colorScheme.primary,
-      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+      // Owner decision 2026-10-26 (user item 4): the compose button wears the
+      // theme accent through the accessor, and its icon ink is picked to read
+      // on that fill.
+      backgroundColor: FluffyThemes.accent,
+      foregroundColor: FluffyThemes.accentInk(fill: FluffyThemes.accent),
       onPressed: () => context.go('/rooms/newprivatechat'),
       extendedIconLabelSpacing: extended ? 10 : 0,
       extendedPadding: extended

@@ -68,6 +68,11 @@ class ThemeController extends State<ThemeBuilder> {
     });
   }
 
+  /// Rebuild the app theme after a theme input changed outside this
+  /// controller - e.g. an `AppSettings` key like `telegramAccentIndex`, which
+  /// `FluffyThemes.buildTheme` reads directly.
+  void refreshTheme() => setState(() {});
+
   Future<void> setPrimaryColor(Color? newPrimaryColor) async {
     final preferences = _sharedPreferences ??=
         await SharedPreferences.getInstance();

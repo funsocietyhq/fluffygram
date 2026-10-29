@@ -1,0 +1,63 @@
+Derivations
+===========
+
+This program is AGPL-3.0-or-later, as FluffyChat is. Part of its user
+interface reproduces the look and behaviour of Telegram for Android
+(Copyright (C) 2017-2026 Telegram FZ-LLC, GNU GPL v. 2 or later). The
+values taken from it are measurements and layout rules, and in the files
+listed below its code structure or its theme file format as well. Every
+listed file cites the Telegram source file and line in a comment, carries
+a notice that this fork changed it in 2026, and is written in
+Flutter/Dart. No Telegram binary, asset, name or resource ships with
+this program.
+
+Files whose code or file-format handling is taken from
+Telegram for Android:
+
+  lib/config/attheme.dart
+  lib/config/imported_theme.dart
+  lib/config/recent_gifs.dart
+  lib/config/setting_keys.dart
+  lib/config/telegram_palette.dart
+  lib/config/themes.dart
+  lib/pages/chat/chat.dart
+  lib/pages/chat/chat_app_bar_title.dart
+  lib/pages/chat/chat_emoji_picker.dart
+  lib/pages/chat/chat_search_panel.dart
+  lib/pages/chat/chat_view.dart
+  lib/pages/chat/composer_geometry.dart
+  lib/pages/chat/event_context_menu.dart
+  lib/pages/chat/events/audio_player.dart
+  lib/pages/chat/events/bubble_shape.dart
+  lib/pages/chat/events/html_message.dart
+  lib/pages/chat/events/message.dart
+  lib/pages/chat/events/message_content.dart
+  lib/pages/chat/events/message_reactions.dart
+  lib/pages/chat/events/reply_content.dart
+  lib/pages/chat/events/unread_divider.dart
+  lib/pages/chat/events/video_player.dart
+  lib/pages/chat/reply_display.dart
+  lib/pages/chat/send_file_dialog.dart
+  lib/pages/chat/sticker_picker_dialog.dart
+  lib/pages/chat_list/chat_list_draft.dart
+  lib/pages/chat_list/chat_list_geometry.dart
+  lib/pages/chat_list/chat_list_item.dart
+  lib/pages/chat_list/telegram_dialog_date.dart
+  lib/pages/chat_list/unread_bubble.dart
+  lib/pages/image_viewer/image_viewer_view.dart
+  lib/pages/image_viewer/telegram_progress_ring.dart
+  lib/pages/image_viewer/telegram_video_controls.dart
+  lib/pages/image_viewer/video_player.dart
+  lib/pages/settings_style/settings_style.dart
+  lib/pages/settings_style/settings_style_view.dart
+  lib/utils/media_viewer_hero.dart
+  lib/utils/string_color.dart
+  lib/utils/telegram_bubble_fill.dart
+  lib/utils/telegram_gif.dart
+  lib/utils/telegram_gif_grid.dart
+  lib/utils/telegram_pager_physics.dart
+  lib/widgets/mxc_image.dart
+
+The rest of the interface reproduces values read off Telegram's
+displayed interface - colours, dp sizes, type sizes, animation curves -
+and each such value names the capture or the source line beside it.
