@@ -6,10 +6,13 @@
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/telegram_palette.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/pages/chat/composer_geometry.dart';
 import 'package:fluffychat/pages/chat/trust_user_key_dialog.dart';
 import 'package:fluffychat/utils/markdown_context_builder.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/string_color.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -225,6 +228,9 @@ class InputBar extends StatelessWidget {
   ) {
     final theme = Theme.of(context);
     const size = 30.0;
+    // Telegram's `@` picker: a 40 dp avatar next to the name in the sender's
+    // own colour, so a mention row is readable at a glance.
+    const mentionSize = TelegramComposerGeometry.mentionAvatarSize;
     if (suggestion['type'] == 'command') {
       final command = suggestion['name']!;
       final hint = commandHint(L10n.of(context), command);
@@ -305,6 +311,7 @@ class InputBar extends StatelessWidget {
     }
     if (suggestion['type'] == 'user' || suggestion['type'] == 'room') {
       final url = Uri.parse(suggestion['avatar_url'] ?? '');
+      final id = suggestion['mxid']!;
       return ListTile(
         onTap: () => onSelected(suggestion),
         leading: Avatar(
@@ -312,10 +319,13 @@ class InputBar extends StatelessWidget {
           name:
               suggestion.tryGet<String>('displayname') ??
               suggestion.tryGet<String>('mxid'),
-          size: size,
+          size: mentionSize,
           client: client,
         ),
-        title: Text(suggestion['displayname'] ?? suggestion['mxid']!),
+        title: Text(
+          suggestion['displayname'] ?? suggestion['mxid']!,
+          style: TextStyle(color: stringToColor(id)),
+        ),
       );
     }
     return const SizedBox.shrink();
@@ -441,6 +451,15 @@ class InputBar extends StatelessWidget {
               room.sendFileEvent(file, shrinkImageMaxDimension: 1600);
             },
           ),
+          // Telegram's composer ink: primary text, primary caret, the theme's
+          // grey hint - no filled-field decoration, no underline, no ink.
+          style: TextStyle(
+            color: TelegramPalette.textPrimary,
+            fontSize: TelegramComposerGeometry.textFontSize,
+            height: TelegramComposerGeometry.textLineHeight,
+          ),
+          cursorColor: TelegramPalette.textPrimary,
+          cursorWidth: TelegramComposerGeometry.fieldCaretWidth,
           minLines: minLines,
           maxLines: maxLines,
           keyboardType: keyboardType,

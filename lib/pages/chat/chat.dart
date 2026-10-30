@@ -3,6 +3,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Portions of the layout, geometry and behaviour of this file are derived
+// from Telegram for Android, Copyright (C) 2017-2026 Telegram FZ-LLC,
+// licensed under the GNU GPL v. 2 or later, and were changed by this fork
+// in 2026 to implement the same interface in Flutter/Dart. The source file
+// and line are cited where they were used. See NOTICE.
+
 import 'dart:async';
 import 'dart:io';
 
@@ -10,11 +16,14 @@ import 'package:collection/collection.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:fluffychat/config/recent_gifs.dart';
+import 'package:fluffychat/config/recent_stickers.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat_view.dart';
 import 'package:fluffychat/pages/chat/event_info_dialog.dart';
+import 'package:fluffychat/pages/chat/events/album_grid.dart';
 import 'package:fluffychat/pages/chat/start_poll_bottom_sheet.dart';
 import 'package:fluffychat/pages/chat/trust_user_key_dialog.dart';
 import 'package:fluffychat/pages/chat/utils/web_file_to_x_file.dart';
@@ -29,6 +38,8 @@ import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/other_party_can_receive.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
+import 'package:fluffychat/utils/telegram_gif.dart';
+import 'package:fluffychat/utils/telegram_gif_file.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
@@ -569,6 +580,19 @@ class ChatController extends State<ChatPageWithRoom>
   Future<void> _insert(int index) async {
     if (index > 0) return;
     final firstEvent = timeline?.events.firstOrNull;
+    // T56.3.2: Telegram's GIF collection grows from every GIF this user
+    // sends - the gallery picker, the tray tile, the same account on another
+    // client. A photo fails the mimetype test; pagination inserts land at
+    // index > 0, so old history never back-fills here (that seed is T56.3.1).
+    // T113: this hook is **not** enough on its own, and was never the writer the
+    // user needed - an own send inserts the SDK's url-less placeholder, so the
+    // write lands on the row that plays the GIF instead
+    // (`lib/pages/chat/events/message_content.dart`). What stays here is the
+    // other-client case: an event that arrives already decrypted, with its url
+    // in hand.
+    if (firstEvent != null && firstEvent.senderId == room.client.userID) {
+      await RecentGifs.recordFromEvent(firstEvent);
+    }
     final eventId = firstEvent?.transactionId ?? firstEvent?.eventId;
     animateInEventId = eventId;
     await Future.delayed(FluffyThemes.animationDuration);
@@ -617,6 +641,20 @@ class ChatController extends State<ChatPageWithRoom>
   }
 
   String? scrollToEventIdMarker;
+
+  /// T70 (2026-10-28): bumps with every highlight jump, so a re-jump to the
+  /// SAME event restarts the row's highlight animation - the marker string
+  /// alone would leave the row's animation widget keyed identically and the
+  /// fade would not replay. Telegram restarts unconditionally:
+  /// `setHighlightedAnimated` writes `highlightProgress = 1000` every call
+  /// (`ChatMessageCell.java:12541-12543`).
+  int scrollToEventIdMarkerToken = 0;
+
+  /// Ends Telegram's highlight cycle: `setHighlightedAnimated` runs
+  /// `highlightProgress` for 1000 ms and `getHighlightAlpha` (line 23119)
+  /// holds full alpha until 300 ms remain, then fades. The row paints the
+  /// 700/300 split; this timer retires the marker when the cycle ends.
+  Timer? _jumpHighlightTimer;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -709,6 +747,7 @@ class ChatController extends State<ChatPageWithRoom>
   void dispose() {
     timeline?.cancelSubscriptions();
     timeline = null;
+    _jumpHighlightTimer?.cancel();
     _storeInputTimeoutTimer?.cancel();
     typingCoolDown?.cancel();
     typingTimeout?.cancel();
@@ -803,6 +842,177 @@ class ChatController extends State<ChatPageWithRoom>
     });
   }
 
+  /// Telegram's sticker tray sends a sticker on one tap, and the sticker joins
+  /// the tray's recents row once the send completes - a sticker whose send
+  /// failed never enters the row. The recents write is a device-local
+  /// preference; the send event itself is untouched.
+  Future<void> sendSticker(ImagePackImageContent sticker) async {
+    await room.sendEvent(
+      {
+        'body': sticker.body,
+        'info': sticker.info ?? {},
+        'url': sticker.url.toString(),
+      },
+      type: EventTypes.Sticker,
+      threadRootEventId: activeThreadId,
+      threadLastEventId: threadLastEventId,
+    );
+    await RecentStickers.record(sticker.url);
+  }
+
+  /// The GIF tray's tile sends the stored GIF on one tap - Telegram's tray has
+  /// no preview screen on this path (`ui/Components/EmojiView.java:706`
+  /// `Delegate.sendGif(...)`), and the GIF joins the tray's grid only once the
+  /// send completes, so a failed send never enters it. The content is the
+  /// shape `telegramEventIsGif()` recognises - an `m.image` whose
+  /// `info['mimetype']` is `image/gif`, or since T123 `image/webp` - which is
+  /// what makes the row autoplay (T56.4). T124: the mimetype sent is the
+  /// stored row's own ([RecentGif.mimeType]), not a fixed `image/gif`, so a
+  /// replay of an animated WebP GIF stays webp in `info`. The grid entry is not
+  /// written here: the timeline insert hook
+  /// `_insert()` (T56.3.2) records every GIF this user sends, this send
+  /// included, so the store has exactly one writer.
+  ///
+  /// T56.3.3: the tile hands over its full [RecentGif] entry, and with a
+  /// known size the content joins the gallery send's shape - the timeline
+  /// media row reads its aspect from `info['w']`/`info['h']`, so the
+  /// replayed row draws at the GIF's true size.
+  /// T112: when the tile carries the `file` reference of a past encrypted
+  /// send, that map goes into the content verbatim, so the homeserver stores
+  /// no second copy - Synapse never de-duplicates (`media_repository.py`
+  /// `create_or_update_content()` names every file after `random_string(24)`)
+  /// and E2EE makes de-duplication impossible. The content is rebuilt from
+  /// the tile's own fields, never copied out of the source event: a replay is
+  /// a new top-level message, so it carries no `relatesTo` and no `m.mentions`
+  /// from the send the tile came from.
+  /// T117 (user, 2026-10-30: "if we send a gif that isn't in the chat we're
+  /// sending it to, it pulls and sends the actual file"). Two paths:
+  /// * the row came from **this** chat - re-send the reference, 313 bytes of
+  ///   content and no upload (T112, `the measurement log` "POC");
+  /// * the row came from another chat - this room has never seen those bytes,
+  ///   so pull the file (media cache first, one download plus one decrypt on
+  ///   a miss) and upload it here as a fresh attachment.
+  Future<void> sendGif(RecentGif gif) async {
+    final file = gif.file;
+    if (gif.room == room.id && (file != null || !room.encrypted)) {
+      await _sendGifByReference(gif, file);
+      return;
+    }
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final gifFile = await TelegramGifFile.file(gif, client: sendingClient);
+    if (gifFile == null) {
+      // No source event (left chat, or a row older than the event id) and no
+      // cached file: there is nothing to upload. Drop the tile rather than
+      // post a bubble nobody can open. T125: `tombstone: false` - the app
+      // could not read the bytes, a user never said "I do not want this
+      // GIF", so the row's source event must stay recordable (a re-open of
+      // that chat, or an explicit "Add to gifs", can bring the tile back).
+      await RecentGifs.remove(gif.url, room: gif.room, tombstone: false);
+      return;
+    }
+    final Uint8List bytes;
+    try {
+      bytes = await gifFile.readAsBytes();
+    } on Object catch (e) {
+      debugPrint('[TelegramGif] cached file unreadable: $e');
+      // T125: same reason as above - an unreadable cache is not a removal.
+      await RecentGifs.remove(gif.url, room: gif.room, tombstone: false);
+      return;
+    }
+    // T133 : a
+    // Convert to gif clip replays as the kind of row it came from - a video that
+    // carries the GIF marker - so the replayed bubble autostarts, muted and
+    // looping, exactly like the send. Everything else replays as an animated
+    // picture.
+    final image = gif.video
+        ? MatrixVideoFile(
+            bytes: bytes,
+            name: '${Uri.parse(gif.url).pathSegments.last}.${gif.fileExtension}',
+            mimeType: gif.mimeType,
+            width: gif.w > 0 ? gif.w : null,
+            height: gif.h > 0 ? gif.h : null,
+          )
+        : MatrixImageFile(
+      bytes: bytes,
+      // T124: the extension follows the row's mimetype. matrix-dart picks an
+      // image encoder from the file name in its resize path
+      // (`matrix_file.dart:229-253`, `encodeNamedImage(fileName)`); this call
+      // passes no shrink argument, so a `.gif` name on webp bytes is a wrong
+      // hint rather than a wrong encode.
+      name: '${Uri.parse(gif.url).pathSegments.last}.${gif.fileExtension}',
+      // T124: not pinned to `image/gif` any more. The pin made a replayed WebP
+      // GIF an event whose `info` claimed gif while its `file` said webp, and
+      // other Matrix clients label the bubble from `info`; this fork hid the
+      // mismatch because it sniffs magic bytes. T123 widened
+      // `telegramEventIsGif()` to `image/webp` on an `m.image`, so the send is
+      // still recognised as a GIF without the pin - the T56.2.1 reason for it
+      // no longer holds.
+      mimeType: gif.mimeType,
+      width: gif.w > 0 ? gif.w : null,
+      height: gif.h > 0 ? gif.h : null,
+    );
+    try {
+      await room.sendFileEvent(
+        image,
+        // The marker rides along, or the replay is an ordinary video bubble.
+        extraContent: gif.video ? {telegramMp4GifContentKey: true} : null,
+        threadRootEventId: activeThreadId,
+        threadLastEventId: threadLastEventId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text(e.toLocalizedString(context))),
+      );
+    }
+  }
+
+  Future<void> _sendGifByReference(
+    RecentGif gif,
+    Map<String, Object?>? file,
+  ) async {
+    if (gif.video) {
+      // T133: same media id, no re-upload, and the shape the row came from:
+      // `m.video` plus `org.fluffygram.gif`. `info` carries no duration - the
+      // store never kept one - and this fork hides the time badge on a marked
+      // clip anyway (`events/video_player.dart`).
+      await room.sendEvent(
+        {
+          'msgtype': 'm.video',
+          'body': Uri.parse(gif.url).pathSegments.last,
+          'url': gif.url,
+          'info': {
+            'mimetype': gif.mimeType,
+            if (gif.w > 0 && gif.h > 0) ...{'w': gif.w, 'h': gif.h},
+          },
+          'file': ?file,
+          telegramMp4GifContentKey: true,
+        },
+        type: EventTypes.Message,
+        threadRootEventId: activeThreadId,
+        threadLastEventId: threadLastEventId,
+      );
+      return;
+    }
+    await room.sendEvent(
+      {
+        'msgtype': 'm.image',
+        'body': Uri.parse(gif.url).pathSegments.last,
+        'url': gif.url,
+        'info': {
+          // T124: the row's real type, so `info` and `file` never disagree.
+          'mimetype': gif.mimeType,
+          // With no known size this is exactly the T56.3 content.
+          if (gif.w > 0 && gif.h > 0) ...{'w': gif.w, 'h': gif.h},
+        },
+        'file': ?file,
+      },
+      type: EventTypes.Message,
+      threadRootEventId: activeThreadId,
+      threadLastEventId: threadLastEventId,
+    );
+  }
+
   Future<void> sendFileAction({FileType type = FileType.any}) async {
     final files = await selectFiles(context, allowMultiple: true, type: type);
     if (files.isEmpty) return;
@@ -838,6 +1048,9 @@ class ChatController extends State<ChatPageWithRoom>
     final files = await ImagePicker().pickMultipleMedia(
       requestFullMetadata: false,
     );
+    // T129: also covers the cancel path - leaving the gallery with nothing
+    // picked must not leave the keyboard open over an untouched composer.
+    _dismissKeyboardAfterPicker();
     if (files.isEmpty) return;
     if (!mounted) return;
 
@@ -856,6 +1069,7 @@ class ChatController extends State<ChatPageWithRoom>
   Future<void> openCameraAction() async {
     inputFocus.unfocus();
     final file = await ImagePicker().pickImage(source: ImageSource.camera);
+    _dismissKeyboardAfterPicker(); // T129
     if (file == null) return;
     if (!mounted) return;
 
@@ -961,6 +1175,7 @@ class ChatController extends State<ChatPageWithRoom>
       source: ImageSource.camera,
       maxDuration: const Duration(minutes: 1),
     );
+    _dismissKeyboardAfterPicker(); // T129
     if (file == null) return;
     if (!mounted) return;
 
@@ -1031,6 +1246,20 @@ class ChatController extends State<ChatPageWithRoom>
       replyEvent = null;
     });
     return;
+  }
+
+  /// T129 (user, 2026-10-29: "Keyboard shouldn't auto pop up when I exit
+  /// media gallery mode"). The `inputFocus.unfocus()` before a media pick does
+  /// not survive the pick: the gallery/camera is a separate Android activity,
+  /// and when ours resumes the system re-shows the soft keyboard for the window
+  /// that held the text input connection. So the chat dismisses the keyboard
+  /// AGAIN when the picker answer lands, and once more on the next frame for a
+  /// resume that arrives after this callback.
+  void _dismissKeyboardAfterPicker() {
+    inputFocus.unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && inputFocus.hasFocus) inputFocus.unfocus();
+    });
   }
 
   void hideEmojiPicker() {
@@ -1267,6 +1496,16 @@ class ChatController extends State<ChatPageWithRoom>
     inputFocus.requestFocus();
   }
 
+  /// T40.3a: the in-chat search panel open flag. chat_view.dart renders the
+  /// panel in the appbar's bottom slot, Telegram-style: the field row replaces
+  /// the header title area and the list overlays the timeline.
+  bool chatSearchOpen = false;
+
+  void toggleChatSearch() {
+    chatSearchOpen = !chatSearchOpen;
+    setState(() {});
+  }
+
   Future<void> scrollToEventId(
     String eventId, {
     bool highlightEvent = true,
@@ -1284,14 +1523,13 @@ class ChatController extends State<ChatPageWithRoom>
       return scrollToEventId(threadRootId, highlightEvent: highlightEvent);
     }
 
+    final visibleEvents = timeline!.events.filterByVisibleInGui(
+      exceptionEventId: eventId,
+      threadId: activeThreadId,
+    );
     final eventIndex = foundEvent == null
         ? -1
-        : timeline!.events
-              .filterByVisibleInGui(
-                exceptionEventId: eventId,
-                threadId: activeThreadId,
-              )
-              .indexOf(foundEvent);
+        : visibleEvents.indexOf(foundEvent);
 
     if (eventIndex == -1) {
       if (foundEvent != null || timelineReloaded) return;
@@ -1318,11 +1556,34 @@ class ChatController extends State<ChatPageWithRoom>
     if (highlightEvent) {
       setState(() {
         scrollToEventIdMarker = eventId;
+        scrollToEventIdMarkerToken++;
+      });
+      _jumpHighlightTimer?.cancel();
+      _jumpHighlightTimer = Timer(const Duration(milliseconds: 1000), () {
+        if (mounted) setState(() => scrollToEventIdMarker = null);
       });
     }
+    // A photo that draws inside an album has no row of its own: the run's
+    // anchor row draws its mosaic (roadmap T7). Ask the cluster which row
+    // actually draws this event, so a jump to a hidden member lands on the
+    // album instead of on that member's empty slot. Selection mode draws every
+    // event on its own row, so there the index stays as it is.
+    final scrollIndex = telegramAlbumGridEnabled && selectedEvents.isEmpty
+        ? TelegramAlbumCluster.of(visibleEvents).scrollTargetIndexAt(eventIndex)
+        : eventIndex;
+    // Owner phone pass on build 49 (2026-10-28): "when scrolling to a message,
+    // make it smoother". Telegram's jump scroller runs at a fixed speed and
+    // decelerates into the centred target over a 400 ms base per screenful
+    // (`LinearSmoothScrollerCustom.java:73`, `DecelerateInterpolator(1.5f)`,
+    // via `ChatActivity.java:6627-6631`). The `scroll_to_index` package runs
+    // its seek hops at `Curves.ease` with no curve parameter (its
+    // `scrollToIndex` takes only `duration` and `preferPosition` - checked in
+    // `scroll_to_index-3.0.1/lib/scroll_to_index.dart:75-90,243`), so the
+    // lever here is the duration: 250 -> 350 ms slows every hop, most of all
+    // the final decelerating one.
     await scrollController.scrollToIndex(
-      eventIndex + 1,
-      duration: FluffyThemes.animationDuration,
+      scrollIndex + 1,
+      duration: const Duration(milliseconds: 350),
       preferPosition: AutoScrollPosition.middle,
     );
     _updateScrollController();
@@ -1342,7 +1603,25 @@ class ChatController extends State<ChatPageWithRoom>
       });
       await loadTimelineFuture;
     }
-    scrollController.jumpTo(0);
+    // Owner phone pass on build 49 (2026-10-28): the scroll-to-bottom button
+    // must "animate it in the same way, and make it smooth" - this was a
+    // `jumpTo`, an instant teleport. Telegram's list scrollers run at a fixed
+    // speed (~400 ms per screenful on a user's Pixel, `0.37 ms/px`,
+    // `LinearSmoothScrollerCustom.java:73`), so the duration is proportional
+    // to the distance travelled - the exact figure here, since the bottom
+    // distance is `offset` - clamped to [250, 750] ms, decelerating into the
+    // end like the jump above.
+    final distance = scrollController.hasClients
+        ? scrollController.offset
+        : 0.0;
+    if (distance <= 1.0) return;
+    scrollController.animateTo(
+      0,
+      duration: Duration(
+        milliseconds: (distance * 0.37).clamp(250.0, 750.0).round(),
+      ),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void onEmojiSelected(_, Emoji? emoji) {

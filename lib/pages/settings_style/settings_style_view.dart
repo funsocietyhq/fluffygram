@@ -3,12 +3,22 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Portions of the layout, geometry and behaviour of this file are derived
+// from Telegram for Android, Copyright (C) 2017-2026 Telegram FZ-LLC,
+// licensed under the GNU GPL v. 2 or later, and were changed by this fork
+// in 2026 to implement the same interface in Flutter/Dart. The source file
+// and line are cited where they were used. See NOTICE.
+
 import 'dart:ui';
 
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:fluffychat/config/chat_backgrounds.dart';
+import 'package:fluffychat/config/imported_theme.dart';
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/telegram_palette.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/pages/chat/events/bubble_shape.dart';
 import 'package:fluffychat/pages/chat/events/state_message.dart';
 import 'package:fluffychat/utils/account_config.dart';
 import 'package:fluffychat/utils/color_value.dart';
@@ -68,6 +78,21 @@ class SettingsStyleView extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            Divider(color: theme.dividerColor),
+            ListTile(
+              title: Text(
+                L10n.of(context).accentColor,
+                style: TextStyle(
+                  color: theme.colorScheme.secondary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            // Telegram's accent picker: 7 swatches, the tap writes the key.
+            _AccentSwatchRow(
+              selectedIndex: controller.accentIndex,
+              onSelect: controller.setAccentIndex,
             ),
             Divider(color: theme.dividerColor),
             ListTile(
@@ -331,18 +356,187 @@ class SettingsStyleView extends StatelessWidget {
             ),
             ListTile(
               title: Text(L10n.of(context).fontSize),
-              trailing: Text('× ${AppSettings.fontSizeFactor.value}'),
+              // Telegram's row names the size it lands on, not a multiplier:
+              // 12..24sp, 16sp at factor 1.0.
+              subtitle: Text('${controller.messageTextSp.round()} sp'),
             ),
             Slider.adaptive(
-              min: 0.5,
-              max: 2.5,
-              divisions: 20,
-              value: AppSettings.fontSizeFactor.value,
-              semanticFormatterCallback: (d) => d.toString(),
-              onChanged: controller.changeFontSizeFactor,
+              min: TelegramBubbleGeometry.minMessageTextSp,
+              max: TelegramBubbleGeometry.maxMessageTextSp,
+              // 1sp steps over Telegram's 12..24sp range.
+              divisions:
+                  (TelegramBubbleGeometry.maxMessageTextSp -
+                          TelegramBubbleGeometry.minMessageTextSp)
+                      .round(),
+              value: controller.messageTextSp,
+              semanticFormatterCallback: (d) => '${d.round()} sp',
+              onChanged: controller.changeMessageTextSp,
+            ),
+            ListTile(
+              title: Text(L10n.of(context).bubbleWidth),
+              // The cap is clamped to the window width when the bubble draws,
+              // so a big value here can never overflow the chat.
+              // The dp cap is derived: percent x the chat column (T39).
+              subtitle: Text('${controller.bubbleWidthPercent} %'),
+            ),
+            Slider.adaptive(
+              min: TelegramBubbleGeometry.minBubbleWidthPercent.toDouble(),
+              max: TelegramBubbleGeometry.maxBubbleWidthPercent.toDouble(),
+              // 1% steps over the 50..100 % range, as Telegram desktop.
+              divisions:
+                  TelegramBubbleGeometry.maxBubbleWidthPercent -
+                  TelegramBubbleGeometry.minBubbleWidthPercent,
+              value: controller.bubbleWidthPercent.toDouble(),
+              semanticFormatterCallback: (d) => '${d.round()} %',
+              onChanged: (d) => controller.changeBubbleWidthPercent(d.round()),
+            ),
+            SwitchListTile.adaptive(
+              title: Text(L10n.of(context).animations),
+              value: controller.animationsEnabled,
+              onChanged: controller.setAnimationsEnabled,
+            ),
+            SwitchListTile.adaptive(
+              title: Text(L10n.of(context).coloredSenderNames),
+              value: controller.colorSenderNames,
+              onChanged: controller.setColorSenderNames,
+            ),
+            // Telegram's "Chat background" row: the same sheet the chat header
+            // opens, scoped to every chat. The store listenable repaints the
+            // dot when the sheet writes the key.
+            ListenableBuilder(
+              listenable: ChatBackgrounds.store,
+              builder: (context, _) => ListTile(
+                title: Text(L10n.of(context).chatBackground),
+                subtitle: Text(L10n.of(context).chatBackgroundGlobalHint),
+                trailing: _BackgroundDot(
+                  color: ChatBackgrounds.clampToTheme(
+                    controller.chatBackground ?? theme.colorScheme.surface,
+                    theme.brightness,
+                  ),
+                  ringColor: theme.colorScheme.onSurfaceVariant,
+                ),
+                onTap: controller.pickChatBackground,
+              ),
+            ),
+            // Telegram's theme import (T8): the group exports a theme from
+            // Telegram, picks the `.attheme` file here and the chat takes its
+            // colours. The file text is device-local - nothing is uploaded.
+            ListenableBuilder(
+              listenable: ImportedTheme.store,
+              builder: (context, _) => ListTile(
+                title: Text(L10n.of(context).importTelegramTheme),
+                subtitle: Text(
+                  controller.hasImportedTheme
+                      ? L10n.of(
+                          context,
+                        ).importedThemeActive(controller.importedThemeName)
+                      : L10n.of(context).importTelegramThemeHint,
+                ),
+                trailing: controller.hasImportedTheme
+                    ? TextButton.icon(
+                        onPressed: controller.removeImportedTheme,
+                        icon: const Icon(Icons.link_off),
+                        label: Text(L10n.of(context).removeImportedTheme),
+                      )
+                    : const Icon(Icons.chevron_right),
+                onTap: controller.importTelegramTheme,
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The filled circle at the end of the "Chat background" row: the fill the
+/// chat will draw, so the row shows the setting, not a name.
+class _BackgroundDot extends StatelessWidget {
+  const _BackgroundDot({required this.color, required this.ringColor});
+
+  final Color color;
+  final Color ringColor;
+
+  static const double size = 24;
+  static const double ringWidth = 1;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: color,
+      shape: BoxShape.circle,
+      border: Border.all(color: ringColor, width: ringWidth),
+    ),
+  );
+}
+
+/// Telegram's accent colour picker: a row of the 7
+/// `TelegramPalette.accentValues` circles, the selected one under a ring with
+/// a check. A tap writes `AppSettings.telegramAccentIndex` at once - Telegram
+/// has no save button.
+class _AccentSwatchRow extends StatelessWidget {
+  const _AccentSwatchRow({required this.selectedIndex, required this.onSelect});
+
+  final int selectedIndex;
+  final void Function(int index) onSelect;
+
+  static const double swatchSize = 36;
+  static const double swatchGap = 6;
+  static const double selectedRingWidth = 2;
+  static const double checkSize = 16;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: swatchGap,
+        vertical: swatchGap,
+      ),
+      // A Wrap, not a Row: 7 swatches always fit, they just break to a second
+      // line on a narrow phone.
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        children: [
+          for (
+            var index = 0;
+            index < TelegramPalette.accentValues.length;
+            index++
+          )
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: swatchGap),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(swatchSize),
+                onTap: () => onSelect(index),
+                child: Container(
+                  width: swatchSize,
+                  height: swatchSize,
+                  decoration: BoxDecoration(
+                    color: TelegramPalette.accentValues[index],
+                    shape: BoxShape.circle,
+                    border: index == selectedIndex
+                        ? Border.all(
+                            color: theme.colorScheme.onSurface,
+                            width: selectedRingWidth,
+                          )
+                        : null,
+                  ),
+                  child: index == selectedIndex
+                      ? const Center(
+                          // White glyph on every accent: it is a bubble ink.
+                          child: Icon(
+                            Icons.check,
+                            size: checkSize,
+                            color: TelegramPalette.dayTextOnBubble,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

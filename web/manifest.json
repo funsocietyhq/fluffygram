@@ -1,10 +1,10 @@
 {
-    "name": "FluffyChat",
-    "short_name": "FluffyChat",
+    "name": "FluffyGram",
+    "short_name": "FluffyGram",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#FFFFFF",
-    "theme_color": "#41a2bc",
+    "theme_color": "#2AABEE",
     "description": "The cutest messenger in the Matrix network",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,

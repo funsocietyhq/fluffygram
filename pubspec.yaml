@@ -7,7 +7,11 @@ name: fluffychat
 description: Chat with your friends.
 publish_to: none
 # On version bump please also increase the build number (for F-Droid)
-version: 2.11.2+3572
+# versionCode 3600: the telemetry build (ROADMAP T51) has to install over
+# the installed build 22, which carries 3591 - Android blocks a downgrade.
+# Group builds go back to upstream 2.11.2+3572 plus one per shipped build,
+# per docs/BUILD.md.
+version: 2.11.2+3668
 
 environment:
   sdk: ">=3.11.1 <4.0.0"
@@ -26,6 +30,8 @@ dependencies:
   device_info_plus: ^13.3.0
   dynamic_color: ^2.1.0
   emoji_picker_flutter: ^4.5.4
+  extended_image: ^10.1.0
+  fcm_shared_isolate: ^3.0.0
   file_picker: ^13.1.0
   file_selector: ^1.1.0
   flutter:
@@ -114,6 +120,12 @@ flutter:
     - assets/logo/mini/
     - assets/sounds/
     - assets/vodozemac/0.8.1/
+    # Fake chat content of the FLUFFYGRAM_DEMO build flag (assets/demo/CREDITS.md).
+    - assets/demo/photo/
+    - assets/demo/thumb/
+    - assets/demo/sticker/
+    - assets/demo/voice/
+    - assets/demo/video/
 
 hooks:
   user_defines:

@@ -39,7 +39,7 @@ class ChatListView extends StatelessWidget {
       child: Row(
         children: [
           Material(
-            color: Theme.of(context).colorScheme.surface,
+            color: FluffyThemes.chatListField(context),
             child: AnimatedSize(
               duration: FluffyThemes.animationDuration,
               curve: FluffyThemes.animationCurve,
@@ -68,9 +68,7 @@ class ChatListView extends StatelessWidget {
               excludeFromSemantics: true,
               behavior: HitTestBehavior.translucent,
               child: Scaffold(
-                backgroundColor: oneColumnSpacesMode
-                    ? Theme.of(context).colorScheme.surfaceContainer
-                    : null,
+                backgroundColor: FluffyThemes.chatListField(context),
                 body: SafeArea(
                   top: oneColumnSpacesMode,
                   bottom: false,
@@ -85,9 +83,7 @@ class ChatListView extends StatelessWidget {
                             topLeft: Radius.circular(AppConfig.borderRadius),
                           )
                         : null,
-                    color: oneColumnSpacesMode
-                        ? Theme.of(context).colorScheme.surface
-                        : null,
+                    color: FluffyThemes.chatListField(context),
                     child: ChatListViewBody(controller),
                   ),
                 ),

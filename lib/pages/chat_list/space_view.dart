@@ -8,13 +8,13 @@ import 'dart:convert';
 
 import 'package:collection/collection.dart';
 import 'package:fluffychat/config/app_config.dart';
+import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/active_call_indicator.dart';
 import 'package:fluffychat/pages/chat_list/unread_bubble.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/matrix_live_kit_calls/matrix_live_kit_call.dart';
 import 'package:fluffychat/utils/stream_extension.dart';
-import 'package:fluffychat/utils/string_color.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
@@ -563,9 +563,15 @@ class _SpaceViewState extends State<SpaceView> {
                                         name: '#',
                                         backgroundColor:
                                             theme.colorScheme.surfaceContainer,
-                                        textColor:
-                                            item.name?.colorScheme.primary ??
-                                            theme.colorScheme.onSurface,
+                                        // Owner decision 2026-10-26 (user
+                                        // item 4): the letter ink is the theme
+                                        // accent when it reads on the avatar
+                                        // fill, never the theme primary.
+                                        textColor: FluffyThemes.accentInk(
+                                          fill: theme
+                                              .colorScheme
+                                              .surfaceContainer,
+                                        ),
                                         shapeBorder: item.roomType == 'm.space'
                                             ? RoundedSuperellipseBorder(
                                                 side: BorderSide(

@@ -72,3 +72,10 @@ path = [
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026-Present Christian Kußowski"
 SPDX-License-Identifier = "LicenseRef-All-Rights-Reserved"
+# The push gateway: Node source that is deployed to Firebase, never bundled
+# into the app. See push-gateway/README.md and the project log.
+[[annotations]]
+path = ["push-gateway/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 FluffyGram contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

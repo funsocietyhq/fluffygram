@@ -6,6 +6,8 @@
 import 'dart:async';
 
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/pages/chat/chat_customise_sheet.dart';
+import 'package:fluffychat/utils/matrix_live_kit_calls/matrix_live_kit_call.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:go_router/go_router.dart';
@@ -14,7 +16,14 @@ import 'package:matrix/matrix.dart';
 
 import 'matrix.dart';
 
-enum ChatPopupMenuActions { details, encryption, leave, search }
+enum ChatPopupMenuActions {
+  details,
+  encryption,
+  leave,
+  search,
+  videoChat,
+  customise,
+}
 
 class ChatSettingsPopupMenu extends StatefulWidget {
   final Room room;
@@ -28,6 +37,27 @@ class ChatSettingsPopupMenu extends StatefulWidget {
 
 class ChatSettingsPopupMenuState extends State<ChatSettingsPopupMenu> {
   StreamSubscription? notificationChangeSub;
+
+  /// The Telegram-style call entry. The chat header shows no call buttons
+  /// (user decision 2026-10-26, finding 15), so this menu is the group
+  /// call's only affordance. LiveKit support is probed once per open.
+  bool _matrixRtcCallsSupported = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkMatrixRtcCallSupport();
+  }
+
+  Future<void> _checkMatrixRtcCallSupport() async {
+    try {
+      final urls = await widget.room.client.getLiveKitServiceUrls();
+      if (urls.isEmpty || !mounted) return;
+      setState(() => _matrixRtcCallsSupported = true);
+    } catch (e) {
+      Logs().d('Unable to check MatrixRTC call support', e);
+    }
+  }
 
   @override
   void dispose() {
@@ -85,6 +115,14 @@ class ChatSettingsPopupMenuState extends State<ChatSettingsPopupMenu> {
               case ChatPopupMenuActions.encryption:
                 context.go('/rooms/${widget.room.id}/encryption');
                 break;
+              case ChatPopupMenuActions.videoChat:
+                // Same affordance the chat header used to carry:
+                // ChatPageController.startOrJoinVideoCall.
+                Matrix.of(context).activeCallRoomId.value = widget.room.id;
+                break;
+              case ChatPopupMenuActions.customise:
+                showChatCustomiseSheet(context, widget.room);
+                break;
             }
           },
           itemBuilder: (BuildContext context) => [
@@ -96,6 +134,30 @@ class ChatSettingsPopupMenuState extends State<ChatSettingsPopupMenu> {
                     const Icon(Icons.info_outline_rounded),
                     const SizedBox(width: 12),
                     Text(L10n.of(context).chatDetails),
+                  ],
+                ),
+              ),
+            if (widget.displayChatDetails && widget.room.membership == .join)
+              PopupMenuItem<ChatPopupMenuActions>(
+                value: ChatPopupMenuActions.customise,
+                child: Row(
+                  children: [
+                    const Icon(Icons.tune_rounded),
+                    const SizedBox(width: 12),
+                    Text(L10n.of(context).customiseChat),
+                  ],
+                ),
+              ),
+            if ((_matrixRtcCallsSupported ||
+                    widget.room.hasActiveMatrixRtcCall) &&
+                widget.room.hasPermissionForMatrixRtcCall)
+              PopupMenuItem<ChatPopupMenuActions>(
+                value: ChatPopupMenuActions.videoChat,
+                child: Row(
+                  children: [
+                    const Icon(Icons.call_outlined),
+                    const SizedBox(width: 12),
+                    Text(L10n.of(context).videoCall),
                   ],
                 ),
               ),

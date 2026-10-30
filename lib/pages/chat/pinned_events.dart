@@ -7,17 +7,33 @@ import 'dart:async';
 
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat.dart';
-import 'package:fluffychat/pages/chat/chat_app_bar_list_tile.dart';
+import 'package:fluffychat/pages/chat/pinned_message_bar.dart';
+import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:matrix/matrix.dart';
 
+/// Value prefix that turns an entry of the pinned-messages sheet into an unpin
+/// action instead of a jump. Telegram's own sheet does the same thing: each row
+/// can be opened or unpinned.
+const _unpinActionPrefix = 'unpin:';
+
 class PinnedEvents extends StatelessWidget {
   final ChatController controller;
 
   const PinnedEvents(this.controller, {super.key});
+
+  String _preview(BuildContext context, Event? event) =>
+      event
+          ?.calcLocalizedBodyFallback(
+            MatrixLocals(L10n.of(context)),
+            withSenderNamePrefix: true,
+            hideReply: true,
+          )
+          .replaceAll('\n', ' ') ??
+      L10n.of(context).loadingPleaseWait;
 
   Future<void> _displayPinnedEventsDialog(BuildContext context) async {
     final l10n = L10n.of(context);
@@ -33,39 +49,42 @@ class PinnedEvents extends StatelessWidget {
     if (events == null) return;
     if (!context.mounted) return;
 
-    final eventId = events.length == 1
-        ? events.single?.eventId
-        : await showModalActionPopup<String>(
-            context: context,
-            title: l10n.pin,
-            cancelLabel: l10n.cancel,
-            actions: events
-                .map(
-                  (event) => AdaptiveModalAction(
-                    value: event?.eventId ?? '',
-                    icon: const Icon(Icons.push_pin_outlined),
-                    label:
-                        event
-                            ?.calcLocalizedBodyFallback(
-                              MatrixLocals(l10n),
-                              withSenderNamePrefix: true,
-                              hideReply: true,
-                            )
-                            .trim()
-                            .replaceAll('\n', ' ') ??
-                        'UNKNOWN',
-                  ),
-                )
-                .toList(),
-          );
+    // Telegram's pinned-messages sheet: one row jumps, one row unpins. An id
+    // arrives from the jump rows, an `unpin:` value from the unpin rows.
+    final canPin = controller.room.canSendEvent(EventTypes.RoomPinnedEvents);
+    final action = await showModalActionPopup<String>(
+      context: context,
+      title: l10n.pin,
+      cancelLabel: l10n.cancel,
+      actions: [
+        for (final event in events)
+          AdaptiveModalAction(
+            value: event?.eventId ?? '',
+            icon: const Icon(Icons.push_pin_outlined),
+            label: _preview(context, event),
+          ),
+        if (canPin)
+          for (final event in events)
+            if (event != null)
+              AdaptiveModalAction(
+                value: '$_unpinActionPrefix${event.eventId}',
+                icon: const Icon(Icons.push_pin),
+                label: '${l10n.unpin} ${_preview(context, event)}',
+                isDestructive: true,
+              ),
+      ],
+    );
 
-    if (eventId != null) controller.scrollToEventId(eventId);
+    if (action == null) return;
+    if (action.startsWith(_unpinActionPrefix)) {
+      await controller.unpinEvent(action.substring(_unpinActionPrefix.length));
+      return;
+    }
+    controller.scrollToEventId(action);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     final pinnedEventIds = controller.room.pinnedEventIds;
 
     if (pinnedEventIds.isEmpty || controller.activeThreadId != null) {
@@ -76,27 +95,26 @@ class PinnedEvents extends StatelessWidget {
       future: controller.room.getEventById(pinnedEventIds.last),
       builder: (context, snapshot) {
         final event = snapshot.data;
-        return ChatAppBarListTile(
-          title:
-              event
-                  ?.calcLocalizedBodyFallback(
-                    MatrixLocals(L10n.of(context)),
-                    withSenderNamePrefix: true,
-                    hideReply: true,
-                  )
-                  .replaceAll('\n', ' ') ??
-              L10n.of(context).loadingPleaseWait,
-          leading: IconButton(
-            splashRadius: 18,
-            iconSize: 18,
-            color: theme.colorScheme.onSurfaceVariant,
-            icon: const Icon(Icons.push_pin),
-            tooltip: L10n.of(context).unpin,
-            onPressed: controller.room.canSendEvent(EventTypes.RoomPinnedEvents)
-                ? () => controller.unpinEvent(event!.eventId)
-                : null,
+        return PinnedMessageBar(
+          leading: FutureBuilder<User?>(
+            // Telegram's leading element is the avatar of the sender of the
+            // pinned message, not a pin glyph.
+            future: event?.fetchSenderUser(),
+            initialData: event?.senderFromMemoryOrFallback,
+            builder: (context, snapshot) {
+              final user = snapshot.data ?? event?.senderFromMemoryOrFallback;
+              return Avatar(
+                mxContent: user?.avatarUrl,
+                name: user?.calcDisplayname() ?? '',
+                size: PinnedMessageBar.avatarSize,
+              );
+            },
           ),
+          label: L10n.of(context).pinnedMessage,
+          preview: _preview(context, event),
+          pinCount: pinnedEventIds.length,
           onTap: () => _displayPinnedEventsDialog(context),
+          onOpenPinList: () => _displayPinnedEventsDialog(context),
         );
       },
     );

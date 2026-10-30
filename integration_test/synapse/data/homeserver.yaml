@@ -190,7 +190,7 @@ presence:
 #  - '127.0.0.0/8'
 #  - '10.0.0.0/8'
 #  - '172.16.0.0/12'
-#  - '192.168.0.0/16'
+#  - '<host ip>/16'
 #  - '100.64.0.0/10'
 #  - '192.0.0.0/24'
 #  - '169.254.0.0/16'
@@ -217,7 +217,7 @@ presence:
 # list.
 #
 #ip_range_whitelist:
-#   - '192.168.1.1'
+#   - '<host ip>'
 
 # List of ports that Synapse should listen on, their purpose and their
 # configuration.
@@ -364,7 +364,7 @@ manhole_settings:
 
 # Monthly Active User Blocking
 #
-# Used in cases where the admin or server owner wants to limit to the
+# Used in cases where the admin or server user wants to limit to the
 # number of monthly active users.
 #
 # 'limit_usage_by_mau' disables/enables monthly active user blocking. When
@@ -1037,7 +1037,7 @@ media_store_path: "/data/media_store"
 #  - '127.0.0.0/8'
 #  - '10.0.0.0/8'
 #  - '172.16.0.0/12'
-#  - '192.168.0.0/16'
+#  - '<host ip>/16'
 #  - '100.64.0.0/10'
 #  - '192.0.0.0/24'
 #  - '169.254.0.0/16'
@@ -1061,7 +1061,7 @@ media_store_path: "/data/media_store"
 # website only visible in your network.
 #
 #url_preview_ip_range_whitelist:
-#   - '192.168.1.1'
+#   - '<host ip>'
 
 # Optional list of URL matches that the URL preview spider is
 # denied from accessing.  You should use url_preview_ip_range_blacklist

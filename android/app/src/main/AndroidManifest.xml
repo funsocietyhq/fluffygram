@@ -28,13 +28,46 @@
     <uses-sdk
             tools:overrideLibrary="io.wazo.callkeep, net.touchcapture.qr.flutterqr, com.cloudwebrtc.webrtc, org.webrtc, com.it_nomads.fluttersecurestorage, com.pichillilorenzo.flutter_inappwebview, com.example.video_compress, com.otaliastudios.transcoder, com.otaliastudios.opengl, com.kineapps.flutter_file_dialog, com.llfbandit.record, com.pravera.flutter_foreground_task"/>
     <application
-        android:label="FluffyChat"
+        android:label="FluffyGram"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:localeConfig="@xml/locale_config"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:enableOnBackInvokedCallback="false"
     >
+        <!-- T91.1 (owner, build 62 on their Android 17 Pixel): Android's back
+             ended the app with the photo viewer on screen.
+
+             This app's targetSdk is Flutter's, 36. Per
+             https://developer.android.com/about/versions/16/behavior-changes-16
+             ("Migration or opt-out required for predictive back"), an app that
+             targets API 36 and runs on Android 16+ gets the predictive back
+             system animations ENABLED BY DEFAULT, and "onBackPressed is not
+             called and KeyEvent.KEYCODE_BACK is not dispatched anymore". The
+             system therefore runs its own back-to-home animation and this
+             app's Flutter-side back handling never runs at all - which is why
+             the PopScope and the route-stack work in build 62 (commit 909db1b2b)
+             changed nothing on the phone: they sit below a dispatch that never
+             arrived.
+
+             `false` is Android's documented temporary opt-out, and it restores
+             the legacy dispatch Flutter's embedding drives into `popRoute()`,
+             where the route stack pops the viewer. Revisit this line when
+             Flutter's Android embedding registers an OnBackInvokedCallback for
+             the viewer route; deleting it then gives Telegram's system animation. -->
+        <!-- T41: the composer must ride the keyboard, not land after it. This app uses the plain
+             android:windowSoftInputMode="adjustResize" path on the activity below, so from platform
+             level 37.2 the system delivers the IME insets frame by frame when this property is true,
+             and Flutter's Scaffold resizes in step with the keyboard. Without it the framework gets
+             one inset update at the end of the animation and the composer snaps into place.
+             Source: developer.android.com "Control and animate the software keyboard"; the Flutter
+             side is TextInputPlugin.java, which installs ImeSyncDeferringInsetsCallback on API 30+.
+             If the per-frame relayouts ever cost frames on the timeline, set this to false. -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_SYNCHRONIZED_INSETS_ANIMATION"
+            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTask"
@@ -74,12 +107,12 @@
                <data android:scheme="matrix" />
             </intent-filter>
 
-            <!-- App can open im.fluffychat:// uris -->
+            <!-- App can open fluffygram:// uris -->
             <intent-filter>
                <action android:name="android.intent.action.VIEW" />
                <category android:name="android.intent.category.DEFAULT" />
                <category android:name="android.intent.category.BROWSABLE" />
-               <data android:scheme="im.fluffychat" android:host="chat" />
+               <data android:scheme="fluffygram" android:host="chat" />
             </intent-filter>
 
             <!-- App can receive shared text -->
@@ -109,6 +142,9 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <!-- The OIDC redirect scheme. Pinned to the reverse-DNS of the client_uri host
+                     (https://fluffychat.im) by MSC2966; see AppConfig.appSsoUrlScheme. A renamed
+                     scheme here gets client registration refused by the auth server. -->
                 <data android:scheme="im.fluffychat.auth" android:path="/login"/>
             </intent-filter>
         </activity>

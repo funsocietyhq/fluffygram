@@ -324,3 +324,13 @@ macos/FluffyChat.app/Contents/Resources/wakelock_plus_wakelock_plus.bundle/Conte
 macos/FluffyChat.app/Contents/_CodeSignature/CodeResources
 macos/FluffyChat.app.dSYM.zip
 macos/FluffyChat.pkg
+
+# Owner-local Telegram reference captures: real chat content, deliberately kept out of git.
+# A clone gets the spec, the target boxes and the rig scripts, not the pixels. Put the
+# reference screenshots supplied by the owner here to run verification/colours.sh,
+# geometry.sh and crop-targets.sh.
+verification/telegram-screenshots/
+verification/targets/
+
+# Local probe harness output (notes/video-probe.sh): decrypted real media, never committed.
+probes_media/

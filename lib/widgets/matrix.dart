@@ -29,6 +29,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+import '../config/demo_mode.dart';
 import '../config/setting_keys.dart';
 import '../pages/key_verification/key_verification_dialog.dart';
 import '../utils/account_bundles.dart';
@@ -213,6 +214,10 @@ class MatrixState extends State<Matrix> {
   AppLifecycleState? _lifecycleState;
 
   void _registerSubs(String name) {
+    // Demo mode: no client subscriptions at all. There is no sync to react to,
+    // no key request can arrive, and on web this is also what keeps the browser
+    // notification permission prompt away from the screenshots.
+    if (kFluffyGramDemo) return;
     final c = getClientByName(name);
     if (c == null) {
       Logs().w(
@@ -320,7 +325,9 @@ class MatrixState extends State<Matrix> {
   }
 
   Future<void> initMatrix() async {
-    if (PlatformInfos.isMobile) {
+    // Demo mode: no background push. It registers this device with the push
+    // gateway, and a demo build makes zero network requests.
+    if (PlatformInfos.isMobile && !kFluffyGramDemo) {
       backgroundPush = BackgroundPush(
         this,
         onFcmError: (errorMsg, {Uri? link}) async {
@@ -379,6 +386,12 @@ class MatrixState extends State<Matrix> {
     _lifecycleState = state;
     if (wasDetached) {
       backgroundPush?.openRoomFromNotification(newActivity: true);
+    }
+    if (kFluffyGramDemo) {
+      // A demo session has no presence to publish and no background sync to
+      // hand back: writing `backgroundSync = true` here would put the local
+      // sync loop back on a timer.
+      return;
     }
     final foreground = state == AppLifecycleState.resumed;
     for (final client in widget.clients) {

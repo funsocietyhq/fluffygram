@@ -56,7 +56,9 @@ class NaviRailItem extends StatelessWidget {
                   duration: FluffyThemes.animationDuration,
                   curve: FluffyThemes.animationCurve,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primary,
+                    // Owner decision 2026-10-26 (user item 4): the selected
+                    // column stripe is the theme accent, not the theme primary.
+                    color: FluffyThemes.accent,
                     borderRadius: const BorderRadius.only(
                       topRight: Radius.circular(90),
                       bottomRight: Radius.circular(90),

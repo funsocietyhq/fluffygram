@@ -5,7 +5,9 @@
 
 import 'package:emoji_picker_flutter/locales/default_emoji_set_locale.dart';
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/telegram_palette.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/pages/chat/composer_geometry.dart';
 import 'package:fluffychat/pages/chat/recording_input_row.dart';
 import 'package:fluffychat/pages/chat/recording_view_model.dart';
 import 'package:fluffychat/utils/other_party_can_receive.dart';
@@ -50,6 +52,16 @@ class ChatInputRow extends StatelessWidget {
 
     final selectedTextButtonStyle = TextButton.styleFrom(
       foregroundColor: theme.colorScheme.onTertiaryContainer,
+    );
+
+    // Telegram's composer buttons are flat circles on their own diameter: no
+    // Material 48 dp tap target, no splash padding, no elevation.
+    final flatCircleStyle = IconButton.styleFrom(
+      minimumSize: const Size.square(
+        TelegramComposerGeometry.sideButtonDiameter,
+      ),
+      padding: EdgeInsets.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
 
     return RecordingViewModel(
@@ -132,143 +144,12 @@ class ChatInputRow extends StatelessWidget {
                       : const SizedBox.shrink(),
                 ]
               : <Widget>[
-                  const SizedBox(width: 8),
-                  AnimatedContainer(
-                    duration: FluffyThemes.animationDuration,
-                    curve: FluffyThemes.animationCurve,
-                    width: textMessageOnly ? 0 : 48,
-                    height: height,
-                    alignment: Alignment.center,
-                    decoration: const BoxDecoration(),
-                    clipBehavior: Clip.hardEdge,
-                    child: PopupMenuButton<AddPopupMenuActions>(
-                      useRootNavigator: true,
-                      icon: const Icon(Icons.add_circle_outline),
-                      iconColor: theme.colorScheme.onPrimaryContainer,
-                      onSelected: controller.onAddPopupMenuButtonSelected,
-                      itemBuilder: (BuildContext context) => [
-                        if (PlatformInfos.isMobile)
-                          PopupMenuItem(
-                            value: AddPopupMenuActions.location,
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor:
-                                    theme.colorScheme.onPrimaryContainer,
-                                foregroundColor:
-                                    theme.colorScheme.primaryContainer,
-                                child: const Icon(Icons.gps_fixed_outlined),
-                              ),
-                              title: Text(L10n.of(context).shareLocation),
-                              contentPadding: const EdgeInsets.all(0),
-                            ),
-                          ),
-                        PopupMenuItem(
-                          value: AddPopupMenuActions.poll,
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.onPrimaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.primaryContainer,
-                              child: const Icon(Icons.poll_outlined),
-                            ),
-                            title: Text(L10n.of(context).startPoll),
-                            contentPadding: const EdgeInsets.all(0),
-                          ),
-                        ),
-                        PopupMenuDivider(),
-                        if (PlatformInfos.isMobile) ...[
-                          PopupMenuItem(
-                            value: AddPopupMenuActions.videoCamera,
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor:
-                                    theme.colorScheme.onPrimaryContainer,
-                                foregroundColor:
-                                    theme.colorScheme.primaryContainer,
-                                child: const Icon(Icons.videocam_outlined),
-                              ),
-                              title: Text(L10n.of(context).recordAVideo),
-                              contentPadding: const EdgeInsets.all(0),
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: AddPopupMenuActions.photoCamera,
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor:
-                                    theme.colorScheme.onPrimaryContainer,
-                                foregroundColor:
-                                    theme.colorScheme.primaryContainer,
-                                child: const Icon(Icons.camera_alt_outlined),
-                              ),
-                              title: Text(L10n.of(context).takeAPhoto),
-                              contentPadding: const EdgeInsets.all(0),
-                            ),
-                          ),
-                          PopupMenuDivider(),
-                        ],
-                        PopupMenuItem(
-                          value: AddPopupMenuActions.video,
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.onPrimaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.primaryContainer,
-                              child: const Icon(Icons.movie_outlined),
-                            ),
-                            title: Text(L10n.of(context).sendVideo),
-                            contentPadding: const EdgeInsets.all(0),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: AddPopupMenuActions.image,
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.onPrimaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.primaryContainer,
-                              child: const Icon(Icons.image_outlined),
-                            ),
-                            title: Text(L10n.of(context).sendImage),
-                            contentPadding: const EdgeInsets.all(0),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: AddPopupMenuActions.file,
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.onPrimaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.primaryContainer,
-                              child: const Icon(Icons.attachment_outlined),
-                            ),
-                            title: Text(L10n.of(context).sendFile),
-                            contentPadding: const EdgeInsets.all(0),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    height: height,
-                    width: 48,
-                    alignment: Alignment.center,
-                    child: IconButton(
-                      tooltip: L10n.of(context).emojis,
-                      color: theme.colorScheme.onPrimaryContainer,
-                      icon: Icon(
-                        controller.showEmojiPicker
-                            ? Icons.keyboard
-                            : Icons.add_reaction_outlined,
-                        key: ValueKey(controller.showEmojiPicker),
-                      ),
-                      onPressed: controller.emojiPickerAction,
-                    ),
-                  ),
+                  // Telegram's composer row, measured 2026-10-26 on
+                  // a measurement crop (2.625 px/dp): the pill's left
+                  // edge is 20 px = 7.6 dp from the screen edge, the pill carries
+                  // its own buttons inside it, and the 44 dp mic circle stands
+                  // outside at the right.
+                  const SizedBox(width: TelegramComposerGeometry.edgeMargin),
                   if (Matrix.of(context).isMultiAccount &&
                       Matrix.of(context).hasComplexBundles &&
                       Matrix.of(context).currentBundle!.length > 1)
@@ -279,59 +160,279 @@ class ChatInputRow extends StatelessWidget {
                       child: _ChatAccountPicker(controller),
                     ),
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2.0),
-                      child: InputBar(
-                        room: controller.room,
-                        minLines: 1,
-                        maxLines: 8,
-                        autofocus: !PlatformInfos.isMobile,
-                        keyboardType: TextInputType.multiline,
-                        textInputAction:
-                            AppSettings.sendOnEnter.value == true &&
-                                PlatformInfos.isMobile
-                            ? TextInputAction.send
-                            : null,
-                        onSubmitted: controller.onInputBarSubmitted,
-                        onSubmitImage: controller.sendImageFromClipBoard,
-                        focusNode: controller.inputFocus,
-                        controller: controller.sendController,
-                        decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.only(
-                            left: 6.0,
-                            right: 6.0,
-                            bottom: 6.0,
-                            top: 3.0,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minHeight: TelegramComposerGeometry.fieldMinHeight,
+                        maxHeight: TelegramComposerGeometry.fieldMaxHeight,
+                      ),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: TelegramPalette.composerPill,
+                          borderRadius: BorderRadius.circular(
+                            TelegramComposerGeometry.fieldRadius,
                           ),
-                          counter: const SizedBox.shrink(),
-                          hintText: controller.room.encrypted
-                              ? L10n.of(context).encryptedMessage
-                              : L10n.of(context).unencryptedMessage,
-                          hintMaxLines: 1,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          filled: false,
                         ),
-                        onChanged: controller.onInputBarChanged,
-                        suggestionEmojis:
-                            getDefaultEmojiLocale(
-                              AppSettings.emojiSuggestionLocale.value.isNotEmpty
-                                  ? Locale(
-                                      AppSettings.emojiSuggestionLocale.value,
-                                    )
-                                  : Localizations.localeOf(context),
-                            ).fold(
-                              [],
-                              (emojis, category) =>
-                                  emojis..addAll(category.emoji),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: <Widget>[
+                            // Telegram's left badge slot holds its GIF search box
+                            // (ink box x 54..115 = 23 dp wide, its left edge 12.9 dp
+                            // inside the pill). FluffyChat has no GIF provider, so
+                            // the emoji toggle takes this slot - user decision
+                            // 2026-10-26. Flat and grey, behaviour unchanged.
+                            SizedBox(
+                              width:
+                                  TelegramComposerGeometry.emojiButtonDiameter,
+                              height:
+                                  TelegramComposerGeometry.emojiButtonDiameter,
+                              child: IconButton(
+                                tooltip: L10n.of(context).emojis,
+                                style: flatCircleStyle,
+                                color: TelegramPalette.textSecondary,
+                                icon: Icon(
+                                  controller.showEmojiPicker
+                                      ? Icons.keyboard
+                                      : Icons.add_reaction_outlined,
+                                  size: TelegramComposerGeometry.sideIconSize,
+                                  key: ValueKey(controller.showEmojiPicker),
+                                ),
+                                onPressed: controller.emojiPickerAction,
+                              ),
                             ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: TelegramComposerGeometry
+                                      .pillHorizontalPadding,
+                                  vertical: TelegramComposerGeometry
+                                      .pillVerticalPadding,
+                                ),
+                                child: InputBar(
+                                  room: controller.room,
+                                  minLines: 1,
+                                  maxLines:
+                                      TelegramComposerGeometry.maxFieldLines,
+                                  autofocus: !PlatformInfos.isMobile,
+                                  keyboardType: TextInputType.multiline,
+                                  textInputAction:
+                                      AppSettings.sendOnEnter.value == true &&
+                                          PlatformInfos.isMobile
+                                      ? TextInputAction.send
+                                      : null,
+                                  onSubmitted: controller.onInputBarSubmitted,
+                                  onSubmitImage:
+                                      controller.sendImageFromClipBoard,
+                                  focusNode: controller.inputFocus,
+                                  controller: controller.sendController,
+                                  decoration: InputDecoration(
+                                    // Flat pill: the DecoratedBox above paints the field,
+                                    // so the Material field decoration stays off - no
+                                    // fill, no outline, no underline.
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    counter: const SizedBox.shrink(),
+                                    hintText: L10n.of(
+                                      context,
+                                    ).notificationRuleMessage,
+                                    hintMaxLines: 1,
+                                    hintStyle: TextStyle(
+                                      color: TelegramPalette.composerHint,
+                                      fontSize:
+                                          TelegramComposerGeometry.textFontSize,
+                                    ),
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    disabledBorder: InputBorder.none,
+                                    filled: false,
+                                  ),
+                                  onChanged: controller.onInputBarChanged,
+                                  suggestionEmojis:
+                                      getDefaultEmojiLocale(
+                                        AppSettings
+                                                .emojiSuggestionLocale
+                                                .value
+                                                .isNotEmpty
+                                            ? Locale(
+                                                AppSettings
+                                                    .emojiSuggestionLocale
+                                                    .value,
+                                              )
+                                            : Localizations.localeOf(context),
+                                      ).fold(
+                                        [],
+                                        (emojis, category) =>
+                                            emojis..addAll(category.emoji),
+                                      ),
+                                ),
+                              ),
+                            ),
+                            // The paperclip inside the pill's right edge (Telegram's
+                            // ink box x 864..979 = 43.8 dp wide, its right edge 21.7
+                            // dp inside the pill). Same add-popup the circled plus
+                            // opened: only the glyph and the position moved.
+                            AnimatedContainer(
+                              duration: FluffyThemes.animationDuration,
+                              curve: FluffyThemes.animationCurve,
+                              width: textMessageOnly
+                                  ? 0
+                                  : TelegramComposerGeometry.sideButtonDiameter,
+                              height:
+                                  TelegramComposerGeometry.sideButtonDiameter,
+                              alignment: Alignment.center,
+                              decoration: const BoxDecoration(),
+                              clipBehavior: Clip.hardEdge,
+                              child: PopupMenuButton<AddPopupMenuActions>(
+                                useRootNavigator: true,
+                                style: flatCircleStyle,
+                                icon: const Icon(
+                                  Icons.attachment_outlined,
+                                  size: TelegramComposerGeometry.sideIconSize,
+                                ),
+                                iconColor: TelegramPalette.textSecondary,
+                                onSelected:
+                                    controller.onAddPopupMenuButtonSelected,
+                                itemBuilder: (BuildContext context) => [
+                                  if (PlatformInfos.isMobile)
+                                    PopupMenuItem(
+                                      value: AddPopupMenuActions.location,
+                                      child: ListTile(
+                                        leading: CircleAvatar(
+                                          backgroundColor: theme
+                                              .colorScheme
+                                              .onPrimaryContainer,
+                                          foregroundColor: theme
+                                              .colorScheme
+                                              .primaryContainer,
+                                          child: const Icon(
+                                            Icons.gps_fixed_outlined,
+                                          ),
+                                        ),
+                                        title: Text(
+                                          L10n.of(context).shareLocation,
+                                        ),
+                                        contentPadding: const EdgeInsets.all(0),
+                                      ),
+                                    ),
+                                  PopupMenuItem(
+                                    value: AddPopupMenuActions.poll,
+                                    child: ListTile(
+                                      leading: CircleAvatar(
+                                        backgroundColor: theme
+                                            .colorScheme
+                                            .onPrimaryContainer,
+                                        foregroundColor:
+                                            theme.colorScheme.primaryContainer,
+                                        child: const Icon(Icons.poll_outlined),
+                                      ),
+                                      title: Text(L10n.of(context).startPoll),
+                                      contentPadding: const EdgeInsets.all(0),
+                                    ),
+                                  ),
+                                  PopupMenuDivider(),
+                                  if (PlatformInfos.isMobile) ...[
+                                    PopupMenuItem(
+                                      value: AddPopupMenuActions.videoCamera,
+                                      child: ListTile(
+                                        leading: CircleAvatar(
+                                          backgroundColor: theme
+                                              .colorScheme
+                                              .onPrimaryContainer,
+                                          foregroundColor: theme
+                                              .colorScheme
+                                              .primaryContainer,
+                                          child: const Icon(
+                                            Icons.videocam_outlined,
+                                          ),
+                                        ),
+                                        title: Text(
+                                          L10n.of(context).recordAVideo,
+                                        ),
+                                        contentPadding: const EdgeInsets.all(0),
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: AddPopupMenuActions.photoCamera,
+                                      child: ListTile(
+                                        leading: CircleAvatar(
+                                          backgroundColor: theme
+                                              .colorScheme
+                                              .onPrimaryContainer,
+                                          foregroundColor: theme
+                                              .colorScheme
+                                              .primaryContainer,
+                                          child: const Icon(
+                                            Icons.camera_alt_outlined,
+                                          ),
+                                        ),
+                                        title: Text(
+                                          L10n.of(context).takeAPhoto,
+                                        ),
+                                        contentPadding: const EdgeInsets.all(0),
+                                      ),
+                                    ),
+                                    PopupMenuDivider(),
+                                  ],
+                                  PopupMenuItem(
+                                    value: AddPopupMenuActions.video,
+                                    child: ListTile(
+                                      leading: CircleAvatar(
+                                        backgroundColor: theme
+                                            .colorScheme
+                                            .onPrimaryContainer,
+                                        foregroundColor:
+                                            theme.colorScheme.primaryContainer,
+                                        child: const Icon(Icons.movie_outlined),
+                                      ),
+                                      title: Text(L10n.of(context).sendVideo),
+                                      contentPadding: const EdgeInsets.all(0),
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: AddPopupMenuActions.image,
+                                    child: ListTile(
+                                      leading: CircleAvatar(
+                                        backgroundColor: theme
+                                            .colorScheme
+                                            .onPrimaryContainer,
+                                        foregroundColor:
+                                            theme.colorScheme.primaryContainer,
+                                        child: const Icon(Icons.image_outlined),
+                                      ),
+                                      title: Text(L10n.of(context).sendImage),
+                                      contentPadding: const EdgeInsets.all(0),
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: AddPopupMenuActions.file,
+                                    child: ListTile(
+                                      leading: CircleAvatar(
+                                        backgroundColor: theme
+                                            .colorScheme
+                                            .onPrimaryContainer,
+                                        foregroundColor:
+                                            theme.colorScheme.primaryContainer,
+                                        child: const Icon(
+                                          Icons.attachment_outlined,
+                                        ),
+                                      ),
+                                      title: Text(L10n.of(context).sendFile),
+                                      contentPadding: const EdgeInsets.all(0),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                  Container(
-                    height: height,
-                    width: height,
-                    alignment: Alignment.center,
+                  // The mic <-> send swap: an empty field shows the mic, the
+                  // first character turns the same circle into the send arrow.
+                  SizedBox(
+                    width: TelegramComposerGeometry.sideButtonDiameter,
+                    height: TelegramComposerGeometry.sideButtonDiameter,
                     child:
                         PlatformInfos.platformCanRecord &&
                             !controller.sendController.text.isNotEmpty &&
@@ -365,9 +466,15 @@ class ChatInputRow extends StatelessWidget {
                               style: IconButton.styleFrom(
                                 backgroundColor: theme.bubbleColor,
                                 foregroundColor: theme.onBubbleColor,
+                                minimumSize: const Size.square(
+                                  TelegramComposerGeometry.sideButtonDiameter,
+                                ),
+                                padding: EdgeInsets.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               icon: Icon(
                                 hovered ? Icons.mic : Icons.mic_none_outlined,
+                                size: TelegramComposerGeometry.sideIconSize,
                               ),
                             ),
                           )
@@ -378,10 +485,19 @@ class ChatInputRow extends StatelessWidget {
                             style: IconButton.styleFrom(
                               backgroundColor: theme.bubbleColor,
                               foregroundColor: theme.onBubbleColor,
+                              minimumSize: const Size.square(
+                                TelegramComposerGeometry.sideButtonDiameter,
+                              ),
+                              padding: EdgeInsets.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                            icon: const Icon(Icons.send_outlined),
+                            icon: const Icon(
+                              Icons.send_outlined,
+                              size: TelegramComposerGeometry.sideIconSize,
+                            ),
                           ),
                   ),
+                  const SizedBox(width: TelegramComposerGeometry.edgeMargin),
                 ],
         );
       },

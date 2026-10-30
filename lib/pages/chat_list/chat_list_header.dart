@@ -4,9 +4,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/telegram_palette.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/chat_list.dart';
+import 'package:fluffychat/pages/chat_list/chat_list_geometry.dart';
 import 'package:fluffychat/pages/chat_list/client_chooser_button.dart';
 import 'package:fluffychat/utils/sync_status_localization.dart';
 import 'package:material_ui/material_ui.dart';
@@ -39,7 +41,7 @@ class ChatListHeader extends StatelessWidget implements PreferredSizeWidget {
           ? Border(bottom: BorderSide(color: theme.dividerColor, width: 1))
           : null,
       backgroundColor: isColumnMode
-          ? theme.colorScheme.surface.withAlpha(240)
+          ? FluffyThemes.chatListField(context).withAlpha(240)
           : Colors.transparent,
       automaticallyImplyLeading: false,
       title: StreamBuilder(
@@ -60,10 +62,25 @@ class ChatListHeader extends StatelessWidget implements PreferredSizeWidget {
                 controller.onSearchEnter(text, globalSearch: globalSearch),
             decoration: InputDecoration(
               filled: true,
-              fillColor: theme.colorScheme.secondaryContainer,
+              // Telegram's search field is a #282828 stadium 39.6 dp tall with the
+              // text inset 11.4 dp, measured on a user's chat-list capture. The
+              // day theme has no capture, so it keeps the theme's own container.
+              fillColor: theme.brightness == Brightness.light
+                  ? theme.colorScheme.secondaryContainer
+                  : TelegramPalette.searchFieldBackground,
+              isDense: true,
+              constraints: BoxConstraints(
+                minHeight: ChatListGeometry.searchFieldHeight,
+              ),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: ChatListGeometry.searchFieldInset,
+                vertical: ChatListGeometry.searchFieldVerticalPadding,
+              ),
               border: OutlineInputBorder(
                 borderSide: BorderSide.none,
-                borderRadius: BorderRadius.circular(99),
+                borderRadius: BorderRadius.circular(
+                  ChatListGeometry.searchFieldRadius,
+                ),
               ),
               hintText: hide
                   ? L10n.of(context).searchChatsRooms
@@ -77,6 +94,9 @@ class ChatListHeader extends StatelessWidget implements PreferredSizeWidget {
                   ? controller.isSearchMode
                         ? IconButton(
                             tooltip: L10n.of(context).cancel,
+                            constraints: BoxConstraints.tightFor(
+                              height: ChatListGeometry.searchFieldHeight,
+                            ),
                             icon: const Icon(Icons.close_outlined),
                             onPressed: controller.cancelSearch,
                             color: theme.colorScheme.onPrimaryContainer,
@@ -86,6 +106,9 @@ class ChatListHeader extends StatelessWidget implements PreferredSizeWidget {
                                   !AppSettings.displayNavigationRail.value)
                         ? IconButton(
                             tooltip: L10n.of(context).search,
+                            constraints: BoxConstraints.tightFor(
+                              height: ChatListGeometry.searchFieldHeight,
+                            ),
                             onPressed: controller.startSearch,
                             icon: Icon(
                               Icons.search_outlined,
@@ -94,6 +117,9 @@ class ChatListHeader extends StatelessWidget implements PreferredSizeWidget {
                           )
                         : IconButton(
                             tooltip: L10n.of(context).displayNavigationRail,
+                            constraints: BoxConstraints.tightFor(
+                              height: ChatListGeometry.searchFieldHeight,
+                            ),
                             onPressed: controller.openNavrail,
                             icon: Icon(
                               Icons.menu,

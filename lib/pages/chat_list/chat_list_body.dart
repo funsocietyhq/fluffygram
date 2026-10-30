@@ -7,6 +7,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/chat_list.dart';
+import 'package:fluffychat/pages/chat_list/chat_list_geometry.dart';
 import 'package:fluffychat/pages/chat_list/chat_list_item.dart';
 import 'package:fluffychat/pages/chat_list/dummy_chat_list_item.dart';
 import 'package:fluffychat/pages/chat_list/search_title.dart';
@@ -132,10 +133,7 @@ class ChatListViewBody extends StatelessWidget {
                   Container(
                     height: 36 + 8 + 8,
                     padding: EdgeInsets.symmetric(vertical: 8),
-                    child: ListView(
-                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                      shrinkWrap: true,
-                      scrollDirection: Axis.horizontal,
+                    child: ChatListChipStrip(
                       children: [
                         ...ActiveFilter.values
                             .where((filter) => filter != ActiveFilter.tag)
@@ -145,13 +143,11 @@ class ChatListViewBody extends StatelessWidget {
                                   horizontal: 4.0,
                                 ),
                                 child: Center(
-                                  child: FilterChip(
+                                  child: ChatListFolderTab(
                                     selected: filter == controller.activeFilter,
-                                    onSelected: (_) => controller
+                                    onSelected: () => controller
                                         .setActiveFilter(filter, null),
-                                    label: Text(
-                                      filter.toLocalizedString(context),
-                                    ),
+                                    label: filter.toLocalizedString(context),
                                   ),
                                 ),
                               ),
@@ -162,13 +158,13 @@ class ChatListViewBody extends StatelessWidget {
                               horizontal: 4.0,
                             ),
                             child: Center(
-                              child: FilterChip(
+                              child: ChatListFolderTab(
                                 selected: entry.key == controller.activeTag,
-                                onSelected: (_) => controller.setActiveFilter(
+                                onSelected: () => controller.setActiveFilter(
                                   ActiveFilter.tag,
                                   entry.key,
                                 ),
-                                label: Text(entry.key.replaceFirst('u.', '')),
+                                label: entry.key.replaceFirst('u.', ''),
                               ),
                             ),
                           ),
@@ -256,6 +252,111 @@ class ChatListViewBody extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Telegram's chat-list folder bar: a horizontal scroll strip whose edge chips
+/// fade under a gradient of the row background, so a chip that does not fit at
+/// the edge reads as faded instead of cut off, and one swipe brings it to the
+/// middle. Measured on our own render (`shots/demo/demo-06-chat-list.png`): the
+/// four chips spanned x=48..1029 of a 1080 px strip, so the fourth stood 50 px
+/// (19 dp) from the edge - one longer label or one room tag cuts it. The strip
+/// keeps the horizontal ListView and adds the fade.
+class ChatListChipStrip extends StatelessWidget {
+  const ChatListChipStrip({required this.children, super.key});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    // The fade is the row's own surface colour, not a new palette colour: the
+    // chat list paints this strip straight onto the theme surface.
+    final surface = FluffyThemes.chatListField(context);
+    return Stack(
+      clipBehavior: Clip.hardEdge,
+      children: [
+        ListView(
+          key: const Key('chat-list-chip-strip'),
+          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+          shrinkWrap: true,
+          scrollDirection: Axis.horizontal,
+          children: children,
+        ),
+        for (final left in [true, false])
+          Positioned(
+            left: left ? 0 : null,
+            right: left ? null : 0,
+            top: 0,
+            bottom: 0,
+            width: 24,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: left
+                        ? [surface, surface.withValues(alpha: 0)]
+                        : [surface.withValues(alpha: 0), surface],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Telegram's chat-list folder tab: a flat translucent pill with 13sp text.
+/// T14b U2 (finding 6): the fill used to be the fixed near-black
+/// `TelegramPalette.folderTabPill`, which rendered as a solid black pill on the
+/// day theme's light row. Fill and ink now come from the theme's own on-surface
+/// ink - 26/255 of it for an unselected pill, 48/255 for the selected one, full
+/// strength text when selected and 170/255 when not - so both read on a light row
+/// and on a near-black row. Telegram's own chip colours are not measured yet, so
+/// these are not claimed as Telegram's values. The measured tab is 20dp high;
+/// Material's chip box cannot shrink below about 28dp, so the tab stays as flat
+/// and compact as the widget allows and the height remains a documented gap.
+class ChatListFolderTab extends StatelessWidget {
+  const ChatListFolderTab({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+    super.key,
+  });
+
+  final String label;
+  final bool selected;
+  final void Function() onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = Theme.of(context).colorScheme.onSurface;
+    return FilterChip(
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      showCheckmark: false,
+      label: Text(label),
+      labelStyle: TextStyle(
+        fontSize: ChatListGeometry.folderTabFontSize,
+        fontWeight: selected ? FontWeight.w500 : null,
+        color: selected ? ink : ink.withValues(alpha: 170 / 255),
+      ),
+      backgroundColor: ink.withValues(alpha: 26 / 255),
+      selectedColor: ink.withValues(alpha: 48 / 255),
+      elevation: 0,
+      pressElevation: 0,
+      side: BorderSide.none,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(
+          Radius.circular(ChatListGeometry.folderTabRadius),
+        ),
+      ),
     );
   }
 }

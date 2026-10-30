@@ -33,7 +33,7 @@ configurations.all {
 
 
 android {
-    namespace = "chat.fluffy.fluffychat"
+    namespace = "app.fluffygram.app"
     // Workaround for https://github.com/juliansteenbakker/flutter_secure_storage/issues/1224
     compileSdk = 37 //flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -66,13 +66,21 @@ android {
     }
 
     defaultConfig {
-        applicationId = "chat.fluffy.fluffychat"
+        applicationId = "app.fluffygram.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        ndk { // Workaround for https://github.com/flutter/flutter/issues/162153#issuecomment-2612443642
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64", "x86")
+        // arm64 phones only. Upstream listed four ABIs as a Google Play visibility workaround
+        // (https://github.com/flutter/flutter/issues/162153#issuecomment-2612443642) to stop the store
+        // offering the app to x86 devices, whose WebRTC natives exist without Flutter's. This fork is
+        // installed from a file by hand, so that failure mode is not reachable, and the four-ABI filter
+        // made one APK carry every architecture: 199 MB, of which a phone uses one architecture (57 MB).
+        // clear() is required: Flutter 3.35+ pre-populates this set with armeabi-v7a, arm64-v8a, x86_64.
+        // Cost: 32-bit armv7 phones (roughly 2015-2018 hardware) cannot install this APK.
+        ndk {
+            abiFilters.clear()
+            abiFilters += listOf("arm64-v8a")
         }
     }
 

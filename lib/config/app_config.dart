@@ -6,7 +6,11 @@
 import 'dart:ui';
 
 abstract class AppConfig {
-  static const Color primaryColor = Color(0xFF261386);
+  // Fork identity. Telegram's accent blue, matching TelegramPalette.accentBlue.
+  // A raw hex is allowed here: this is brand ink, not a measured target colour,
+  // so it is outside the palette_contract.sh scope (that script reads only
+  // lib/config/telegram_palette.dart).
+  static const Color primaryColor = Color(0xFF2AABEE);
 
   static const Color chatColor = primaryColor;
   static const double messageFontSize = 16.0;
@@ -15,11 +19,12 @@ abstract class AppConfig {
   static const bool hideTypingUsernames = false;
 
   static const String inviteLinkPrefix = 'https://matrix.to/#/';
-  static const String deepLinkPrefix = 'im.fluffychat://chat/';
+  static const String deepLinkPrefix = 'fluffygram://chat/';
   static const String schemePrefix = 'matrix:';
-  static const String pushNotificationsChannelId = 'fluffychat_push';
-  static const String pushNotificationsAppId = 'chat.fluffy.fluffychat';
-  static const double borderRadius = 18.0;
+  static const String pushNotificationsChannelId = 'fluffygram_push';
+  // Must equal the Android applicationId / iOS bundle id, see docs/UPSTREAM.md.
+  static const String pushNotificationsAppId = 'app.fluffygram.app';
+  static const double borderRadius = 15.0;
   static const double spaceBorderRadius = 11.0;
   static const double columnWidth = 360.0;
 
@@ -29,20 +34,41 @@ abstract class AppConfig {
       'https://ko-fi.com/post/How-to-use-end-to-end-encryption-in-FluffyChat-A5O725WDR5';
   static const String howDoIGetStickersTutorial =
       'https://ko-fi.com/post/How-to-add-a-sticker-pack-to-FluffyChat-N4N01OXATI';
-  static const String appId = 'im.fluffychat.app';
-  static const String appOpenUrlScheme = 'im.fluffychat';
+  // appId, appOpenUrlScheme and deepLinkPrefix move together: a deep link breaks
+  // silently if one of them is left behind. appSsoUrlScheme does NOT move with them -
+  // see its own comment. Renaming the first three is safe; renaming the fourth is not.
+  static const String appId = 'app.fluffygram.app';
+  static const String appOpenUrlScheme = 'fluffygram';
+  // PINNED to the client_uri host, do not rename. MSC2966 redirect-URI validation for
+  // `application_type: native` requires a private-use redirect scheme to be the reverse-DNS
+  // form of the client's `client_uri` host (`im.fluffychat.auth:/login` for
+  // `client_uri = https://fluffychat.im`, which is `AppSettings.website`). Matrix
+  // Authentication Service enforces this in policies/client_registration/client_registration.rego
+  // (`reverse_dns_match(client_uri.host, url.scheme)`), so a scheme like `fluffygram.auth`
+  // gets the dynamic client registration POST refused with a policy-denied 400 and login dies
+  // at `registerOidcClient` - measured on a phone at build 2. To rename this scheme, the fork
+  // must first own a domain and set `chat.fluffy.website_url` to it: scheme and client_uri host
+  // move together, and nothing in the repo gates the login path.
   static const String appSsoUrlScheme = 'im.fluffychat.auth';
   // Identifies the notification activation callback on Windows. Never change!
   static const String windowsNotificationGuid =
       '4894dfda-c70a-4ebc-b139-acae55f3988d';
 
+  // AGPL-3.0 source offer: a user must point this at the public fork URL
+  // before the APK goes out (docs/UPSTREAM.md "License duty"). Upstream is the
+  // value of record until that URL exists.
   static const String sourceCodeUrl =
       'https://github.com/krille-chan/fluffychat';
   static const String supportUrl =
       'https://github.com/krille-chan/fluffychat/issues';
   static const String changelogUrl = 'https://fluffychat.im/changelog/';
-  static const String latestReleaseApiUrl =
-      'https://api.github.com/repos/krille-chan/fluffychat/releases/latest';
+
+  /// Empty = the update check is inert. The fork never asks upstream for a
+  /// release, so the group is never nagged about a FluffyChat version they
+  /// cannot install. `UpdateNotifier.showUpdateAvailableBanner` returns early
+  /// on an empty value. Owner: set this to the fork's own GitHub releases API
+  /// endpoint to re-enable the check.
+  static const String latestReleaseApiUrl = '';
   static const String helpUrl =
       'https://ko-fi.com/post/How-can-I-support-FluffyChat-J2G325WE6I';
 
@@ -60,10 +86,11 @@ abstract class AppConfig {
     path: 'krille-chan/fluffychat/refs/heads/main/recommended_homeservers.json',
   );
 
-  static final Uri crashReportEndpoint = Uri(
-    scheme: 'https',
-    host: 'crash.fluffy.chat',
-  );
+  /// Null = crash reporting is disabled: reports are logged locally and sent
+  /// nowhere. Upstream's endpoint (https://crash.fluffy.chat) receives the
+  /// group's stack traces, which the fork must not do. Keep the constant;
+  /// `AppSettings.autoSendErrorReports` defaults to false alongside this.
+  static const Uri? crashReportEndpoint = null;
 
   static const String mainIsolatePortName = 'main_isolate';
   static const String pushIsolatePortName = 'push_isolate';

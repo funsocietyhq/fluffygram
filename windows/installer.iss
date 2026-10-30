@@ -12,10 +12,10 @@
 [Setup]
 ; Never change the AppId! Inno Setup uses it to detect an existing
 ; installation, so that a new installer updates it in place.
-AppId={{4914EA58-B990-4CA5-BFAA-8EAC9A24F6A5}
-AppName=FluffyChat
+AppId={{6F0B4C7D-1D5B-4B8E-9E3A-7C2A5D4F9B11}
+AppName=FluffyGram
 AppVersion={#AppVersion}
-AppVerName=FluffyChat {#AppVersion}
+AppVerName=FluffyGram {#AppVersion}
 AppPublisher=Christian Kußowski
 AppPublisherURL=https://fluffychat.im
 AppSupportURL=https://github.com/krille-chan/fluffychat/issues
@@ -24,7 +24,7 @@ VersionInfoVersion={#AppVersion}
 ; Per-user installation into %LOCALAPPDATA%\Programs, so that neither the
 ; installation nor updates require admin rights.
 PrivilegesRequired=lowest
-DefaultDirName={autopf}\FluffyChat
+DefaultDirName={autopf}\FluffyGram
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -66,8 +66,8 @@ Type: filesandordirs; Name: "{app}\data"
 Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\FluffyChat"; Filename: "{app}\fluffychat.exe"
-Name: "{autodesktop}\FluffyChat"; Filename: "{app}\fluffychat.exe"; Tasks: desktopicon
+Name: "{autoprograms}\FluffyGram"; Filename: "{app}\fluffychat.exe"
+Name: "{autodesktop}\FluffyGram"; Filename: "{app}\fluffychat.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\fluffychat.exe"; Description: "{cm:LaunchProgram,FluffyChat}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\fluffychat.exe"; Description: "{cm:LaunchProgram,FluffyGram}"; Flags: nowait postinstall skipifsilent
