@@ -71,4 +71,46 @@ abstract final class RecentStickers {
     await AppSettings.recentStickers.setItem(jsonEncode(next));
     notifier.changed();
   }
+
+  /// The mxc url of the sticker an event carries. A Matrix sticker is a plain
+  /// `mxc://` reference (`content['url']`) - never the encrypted-attachment
+  /// shape a photo uses, where the url sits inside `content['file']`
+  /// (`matrix-14.1.0/lib/src/room.dart:1120-1138`) - and both shapes are read
+  /// here so a hand-made sticker event works too. Null for the url-less
+  /// placeholder `Room.sendEvent()` inserts while the send is in flight.
+  static String? urlOf(Event event) {
+    final file = event.content['file'];
+    final url = (file is Map ? file['url'] : null) ?? event.content['url'];
+    return url is String && url.startsWith('mxc://') ? url : null;
+  }
+
+  /// True when this row's sticker is in the drawer right now - the test that
+  /// makes the context menu read "Remove from stickers" instead of "Add to
+  /// stickers" (T142, the T125 rule for GIF rows).
+  static bool holds(Event event) {
+    final url = urlOf(event);
+    return url != null && uris.contains(url);
+  }
+
+  /// T142 (user, 2026-10-30: "'add to stickers' etc? Then they'd show up in the
+  /// sticker drawer"): put the sticker of **any** sticker row - mine or a
+  /// friend's - into the drawer by hand. Reads only what the event carries; no
+  /// download, no re-encode, no `im.ponies` pack write (a pack is a shared
+  /// account-data object; the recents row is the device-local list Telegram's
+  /// drawer shows first).
+  static Future<void> addFromEvent(Event event) async {
+    final url = urlOf(event);
+    if (url == null) return;
+    await record(Uri.parse(url));
+  }
+
+  /// Take this row's sticker out of the drawer. Device-local: nothing is
+  /// un-sent, and the same sticker sent again enters the row again - Telegram
+  /// behaves the same way, and unlike the GIF tray this store keeps no
+  /// tombstone, because a sticker list of 20 urls is cheap to re-add.
+  static Future<void> removeForEvent(Event event) async {
+    final url = urlOf(event);
+    if (url == null) return;
+    await remove(Uri.parse(url));
+  }
 }

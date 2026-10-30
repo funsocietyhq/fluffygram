@@ -796,6 +796,21 @@
         "type": "String",
         "placeholders": {}
     },
+    "sendAsSticker": "Send as sticker",
+    "@sendAsSticker": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "addToStickers": "Add to stickers",
+    "@addToStickers": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "removeFromStickers": "Remove from stickers",
+    "@removeFromStickers": {
+        "type": "String",
+        "placeholders": {}
+    },
     "draftLabel": "Draft:",
     "@draftLabel": {
         "type": "String",

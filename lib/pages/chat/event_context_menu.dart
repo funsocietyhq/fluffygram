@@ -109,6 +109,12 @@ enum TelegramContextAction {
   // has the same pair on a GIF row ("Add to GIFs"); the fork's tray is the
   // local `RecentGifs` store, so the write is device-local.
   gifs,
+  // T142 (user, 2026-10-30: "'add to stickers' etc? Then they'd show up in the
+  // sticker drawer"): the same pair on a sticker row. Telegram's counterpart is
+  // "Add to Stickers", which writes a **pack** - a shared account-data object.
+  // The fork writes its own drawer list (`RecentStickers`, cap 20), which is the
+  // row the sticker tray opens with, and that is device-local like the GIF tray.
+  stickers,
   copyLink,
   info,
   edit,
@@ -124,6 +130,10 @@ enum TelegramContextAction {
       isPinned ? Icons.push_pin : Icons.push_pin_outlined,
     TelegramContextAction.save => Icons.download_outlined,
     TelegramContextAction.gifs => Icons.gif_outlined,
+    // Material has no `sticker` glyph in this Flutter build (checked
+    // `packages/flutter/lib/src/material/icons.dart`); `animation` is the
+    // sticker-shaped one.
+    TelegramContextAction.stickers => Icons.animation,
     TelegramContextAction.copyLink => Icons.link,
     TelegramContextAction.info => Icons.info_outlined,
     TelegramContextAction.edit => Icons.edit_outlined,
@@ -139,6 +149,7 @@ enum TelegramContextAction {
     BuildContext context, {
     required bool isPinned,
     bool inGifTray = false,
+    bool inStickerDrawer = false,
   }) {
     final l10n = L10n.of(context);
     return switch (this) {
@@ -157,6 +168,9 @@ enum TelegramContextAction {
       // shared with the tray tile's own long-press menu.
       TelegramContextAction.gifs =>
         inGifTray ? l10n.removeFromGifs : l10n.addToGifs,
+      // T142: ARB keys `addToStickers` / `removeFromStickers`.
+      TelegramContextAction.stickers =>
+        inStickerDrawer ? l10n.removeFromStickers : l10n.addToStickers,
       // Telegram's menu label is R.string.CopyLink "Copy Link"
       // (res/values/strings.xml:1970); the fork ships "Copy link" (the T40.1
       // row label; casing kept on purpose, the measurement log T42).
@@ -246,8 +260,11 @@ List<TelegramContextAction> telegramContextActionsFor({
   if (telegramEventIsGif(event) || telegramEventIsMp4Gif(event)) {
     actions.add(TelegramContextAction.gifs);
   }
-  // "Add to stickers" is excluded: the sticker pack write (`im.ponies`) lives
-  // in lib/pages/settings_emotes/, and no row-level API for it exists today.
+  // T142 : "Add to stickers" / "Remove from stickers" on
+  // every sticker row, mine or a friend's. The write is the drawer's recents
+  // list, not an `im.ponies` pack - a pack is shared account data managed in
+  // Settings, and no row has a reason to rewrite it.
+  if (type == MessageTypes.Sticker) actions.add(TelegramContextAction.stickers);
   // Copy link: Telegram shows it on a row whose text carries a link.
   if (type == MessageTypes.Text && telegramEventLink(body) != null) {
     actions.add(TelegramContextAction.copyLink);
@@ -279,6 +296,7 @@ Future<TelegramContextAction?> showTelegramEventContextMenu(
   required List<TelegramContextAction> actions,
   required bool isPinned,
   bool inGifTray = false,
+  bool inStickerDrawer = false,
 }) {
   final theme = Theme.of(context);
   final brightness = theme.brightness;
@@ -324,6 +342,7 @@ Future<TelegramContextAction?> showTelegramEventContextMenu(
                   context,
                   isPinned: isPinned,
                   inGifTray: inGifTray,
+                  inStickerDrawer: inStickerDrawer,
                 ),
                 style: TextStyle(
                   fontSize: TelegramContextMenuGeometry.labelFontSize,

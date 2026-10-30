@@ -17,6 +17,7 @@ import 'package:crop_image/crop_image.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:fluffychat/config/app_config.dart';
+import 'package:fluffychat/config/recent_stickers.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/image_edit_geometry.dart';
 import 'package:fluffychat/pages/chat/trust_user_key_dialog.dart';
@@ -29,6 +30,7 @@ import 'package:fluffychat/utils/start_push_foreground_service.dart';
 import 'package:fluffychat/utils/telegram_gif.dart'
     show telegramMp4GifContentKey;
 import 'package:fluffychat/utils/telegram_gif_webp.dart';
+import 'package:fluffychat/utils/telegram_sticker_webp.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/adaptive_dialog_action.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/dialog_text_field.dart';
 import 'package:material_ui/material_ui.dart';
@@ -63,6 +65,12 @@ class SendFileDialogState extends State<SendFileDialog> {
   /// an animated WebP at send time. Off by default, and only offered for a
   /// video pick; no heuristic ever re-classes a clip on its own.
   bool convertToGif = false;
+
+  /// T142 (user, 2026-10-30: "offer the toggle 'send as sticker' ... Then
+  /// they'd show up in the sticker drawer"): the picked image goes out as an
+  /// `m.sticker` event instead of an `m.image`. Off by default, offered for an
+  /// image pick only.
+  bool sendAsSticker = false;
 
   /// Images smaller than 20kb don't need compression.
   static const int minSizeToCompress = 20 * 1000;
@@ -159,7 +167,8 @@ class SendFileDialogState extends State<SendFileDialog> {
           // `getVideoInfo()` ignores its own `compress` argument, so the choice
           // is made here, by which function is called: Compress off (or a clip
           // too small to bother with) ships the picked bytes.
-          final compressThisVideo = !convertToGif &&
+          final compressThisVideo =
+              !convertToGif &&
               length != null &&
               length > minSizeToCompress &&
               compress;
@@ -223,11 +232,35 @@ class SendFileDialogState extends State<SendFileDialog> {
           shrinkImageMaxDimension = null;
         }
 
+        // T142: "Send as sticker". The resize to Telegram's 512 px sticker
+        // canvas happens here, in the fork, because matrix-dart's resize path
+        // never sees this file: a sticker send does not go through
+        // `sendFileEvent()` at all (see [_sendStickerEvent]).
+        var sendSticker = false;
+        if (sendAsSticker && file is MatrixImageFile) {
+          final asSticker = await telegramImageToSticker(file);
+          if (asSticker != null) {
+            debugPrint(
+              '[Sticker] ${asSticker.bytes.length} B from ${file.bytes.length} B '
+              '(${asSticker.width}x${asSticker.height}, ${xfile.name})',
+            );
+            file = asSticker;
+            sendSticker = true;
+          } else {
+            debugPrint('[Sticker] kept as an image (${xfile.name})');
+          }
+        }
+
         if (file.bytes.length > maxUploadSize) {
           throw FileTooBigMatrixException(file.bytes.length, maxUploadSize);
         }
 
         final label = _labelTextController.text.trim();
+
+        if (sendSticker && file is MatrixImageFile) {
+          await _sendStickerEvent(file, label);
+          continue;
+        }
 
         try {
           await widget.room.sendFileEvent(
@@ -266,6 +299,44 @@ class SendFileDialogState extends State<SendFileDialog> {
     }
 
     return;
+  }
+
+  /// T142: the sticker send. matrix-dart cannot produce this event -
+  /// `Room.sendFileEvent()` always sends `type: m.room.message` and takes the
+  /// `msgtype` from the mime type (`matrix-14.1.0/lib/src/room.dart:833`,
+  /// `matrix_file.dart:45 msgType`), and a Matrix sticker is its **own event
+  /// type** (`EventTypes.Sticker`). So this is the sticker tray's own path
+  /// (`chat.dart:843 sendSticker`), the shape the group already receives in an
+  /// encrypted room: `uploadContent` puts the WebP on the server as a plain
+  /// `mxc://` reference - a Matrix sticker encrypts at the event level, never at
+  /// the byte level - and `room.sendEvent` sends `{body, url, info}` through the
+  /// usual encryption queue.
+  ///
+  /// A caption typed here goes into `body`, which is alt text on a sticker: this
+  /// fork draws a sticker row as the image alone (`message_content.dart:179`
+  /// returns the media with no text and no bubble), and Telegram has no caption
+  /// on a sticker either. So a caption is not shown - it is search text.
+  Future<void> _sendStickerEvent(MatrixImageFile sticker, String label) async {
+    final url = await widget.room.client.uploadContent(
+      sticker.bytes,
+      filename: sticker.name,
+      contentType: sticker.mimeType,
+    );
+    await widget.room.sendEvent(
+      {
+        'body': label.isNotEmpty ? label : sticker.name,
+        'url': url.toString(),
+        'info': {...sticker.info},
+      },
+      type: EventTypes.Sticker,
+      threadRootEventId: widget.threadRootEventId,
+      threadLastEventId: widget.threadLastEventId,
+    );
+    // Telegram's recents row takes the sticker once the send is through, the
+    // same rule as the tray tile (`chat.dart:854`): a failed send never enters.
+    // The drawer is open in the other chat half of the time, and
+    // `RecentStickers.notifier` (T56.2.2) repaints it.
+    await RecentStickers.record(url);
   }
 
   Future<String> _calcCombinedFileSize() async {
@@ -558,6 +629,42 @@ class SendFileDialogState extends State<SendFileDialog> {
                             children: [
                               Text(
                                 L10n.of(context).convertToGif,
+                                style: theme.textTheme.titleMedium,
+                                textAlign: TextAlign.left,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  // T142 : "Send as sticker" sits where the
+                  // gif switch sits, and only for an image pick - a sticker
+                  // canvas has nothing to do to a clip or a document.
+                  if (uniqueFileType == 'image')
+                    Row(
+                      crossAxisAlignment: .center,
+                      children: [
+                        if ({
+                          TargetPlatform.iOS,
+                          TargetPlatform.macOS,
+                        }.contains(theme.platform))
+                          CupertinoSwitch(
+                            value: sendAsSticker,
+                            onChanged: (v) => setState(() => sendAsSticker = v),
+                          )
+                        else
+                          Switch.adaptive(
+                            value: sendAsSticker,
+                            onChanged: (v) => setState(() => sendAsSticker = v),
+                          ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: .min,
+                            crossAxisAlignment: .start,
+                            children: [
+                              Text(
+                                L10n.of(context).sendAsSticker,
                                 style: theme.textTheme.titleMedium,
                                 textAlign: TextAlign.left,
                               ),

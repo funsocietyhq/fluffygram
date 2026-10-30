@@ -592,6 +592,15 @@ class ChatController extends State<ChatPageWithRoom>
     // in hand.
     if (firstEvent != null && firstEvent.senderId == room.client.userID) {
       await RecentGifs.recordFromEvent(firstEvent);
+      // T142: the drawer's half of the same hook, and for the same reason the
+      // GIF comment names - this catches a sticker sent from **this account on
+      // another client**, which arrives already decrypted with its url in hand.
+      // A sticker sent from this phone records itself at the send site
+      // (`sendSticker()`, and the send dialog's sticker branch), because
+      // `Room.sendEvent()` inserts a url-less placeholder here.
+      if (firstEvent.messageType == MessageTypes.Sticker) {
+        await RecentStickers.addFromEvent(firstEvent);
+      }
     }
     final eventId = firstEvent?.transactionId ?? firstEvent?.eventId;
     animateInEventId = eventId;

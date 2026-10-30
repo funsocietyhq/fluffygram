@@ -14,6 +14,7 @@ import 'dart:ui' as ui;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:fluffychat/config/chat_backgrounds.dart';
 import 'package:fluffychat/config/recent_gifs.dart';
+import 'package:fluffychat/config/recent_stickers.dart';
 import 'package:fluffychat/config/telegram_palette.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
@@ -704,6 +705,8 @@ Future<void> _openEventContextMenu(
     // T125: which verb the GIF item shows - "Add to gifs" or "Remove from
     // gifs". A read of the local store, no network.
     inGifTray: RecentGifs.holds(event),
+    // T142: the same read for the sticker item.
+    inStickerDrawer: RecentStickers.holds(event),
   );
   if (chosen == null || !context.mounted) return;
 
@@ -749,6 +752,15 @@ Future<void> _openEventContextMenu(
         await RecentGifs.removeForEvent(event);
       } else {
         await RecentGifs.addFromEvent(event);
+      }
+    case TelegramContextAction.stickers:
+      // T142 : one item, two verbs on the device-local
+      // drawer list. `RecentStickers` fires its notifier (T56.2.2), so an open
+      // sticker tray repaints at once.
+      if (RecentStickers.holds(event)) {
+        await RecentStickers.removeForEvent(event);
+      } else {
+        await RecentStickers.addFromEvent(event);
       }
     case TelegramContextAction.copyLink:
       final link = telegramEventLink(event.body);
