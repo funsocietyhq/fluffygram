@@ -37,7 +37,6 @@ Telegram for Android:
   lib/pages/chat/events/unread_divider.dart
   lib/pages/chat/events/video_player.dart
   lib/pages/chat/reply_display.dart
-  lib/pages/chat/send_file_dialog.dart
   lib/pages/chat/sticker_picker_dialog.dart
   lib/pages/chat_list/chat_list_draft.dart
   lib/pages/chat_list/chat_list_geometry.dart
@@ -55,6 +54,7 @@ Telegram for Android:
   lib/utils/telegram_bubble_fill.dart
   lib/utils/telegram_gif.dart
   lib/utils/telegram_gif_grid.dart
+  lib/utils/telegram_mp4_gif.dart
   lib/utils/telegram_pager_physics.dart
   lib/widgets/mxc_image.dart
 

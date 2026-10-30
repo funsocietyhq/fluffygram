@@ -27,9 +27,8 @@ import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/size_string.dart';
 import 'package:fluffychat/utils/start_push_foreground_service.dart';
-import 'package:fluffychat/utils/telegram_gif.dart'
-    show telegramMp4GifContentKey;
 import 'package:fluffychat/utils/telegram_gif_webp.dart';
+import 'package:fluffychat/utils/telegram_mp4_gif.dart';
 import 'package:fluffychat/utils/telegram_sticker_webp.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/adaptive_dialog_action.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/dialog_text_field.dart';
@@ -77,14 +76,16 @@ class SendFileDialogState extends State<SendFileDialog> {
 
   final TextEditingController _labelTextController = TextEditingController();
 
-  /// What a send adds next to the caption: the `org.fluffygram.gif` marker on a
-  /// Convert to gif clip, so the timeline row knows this mp4 is a GIF (T131).
-  static Map<String, dynamic>? _extraContent(String label, bool asGif) {
-    if (label.isEmpty && !asGif) return null;
-    return {
-      if (label.isNotEmpty) 'body': label,
-      if (asGif) telegramMp4GifContentKey: true,
-    };
+  /// What a send adds next to the caption. T143 (user, 2026-10-30: "switch back
+  /// to actually converting mp4 to animated webp on the fly so that any matrix
+  /// client can see it"): a Convert to gif clip is no longer MARKED, it is
+  /// converted, so an `m.image` of an animated WebP goes out and every client
+  /// loops it. Nothing writes `org.fluffygram.gif` any more; that key still
+  /// READS, in `telegram_gif.dart`, so the marked clips the group already holds
+  /// from builds 88-92 keep playing.
+  static Map<String, dynamic>? _extraContent(String label) {
+    if (label.isEmpty) return null;
+    return {'body': label};
   }
 
   /// Mutable working copy of [SendFileDialog.files]. Editing an image replaces
@@ -145,7 +146,10 @@ class SendFileDialogState extends State<SendFileDialog> {
         final xfile = _files[i];
         MatrixFile file;
         MatrixImageFile? thumbnail;
-        var sendAsGif = false;
+        // Declared here, before the video branch: a Convert to gif clip has
+        // already been sized and encoded by the time the video branch ends, and
+        // must not be resized a second time by matrix-dart.
+        var shrinkImageMaxDimension = compress ? 1600 : null;
         final mimeType = xfile.mimeType ?? lookupMimeType(xfile.path);
 
         // Generate video thumbnail
@@ -167,6 +171,10 @@ class SendFileDialogState extends State<SendFileDialog> {
           // `getVideoInfo()` ignores its own `compress` argument, so the choice
           // is made here, by which function is called: Compress off (or a clip
           // too small to bother with) ships the picked bytes.
+          // A Convert to gif clip is NOT video-compressed first: its bytes only
+          // serve as the fallback if the conversion fails, and mpv reads the
+          // picked file itself, so a LightCompressor pass here would be seconds
+          // thrown away.
           final compressThisVideo =
               !convertToGif &&
               length != null &&
@@ -175,21 +183,46 @@ class SendFileDialogState extends State<SendFileDialog> {
           if (compressThisVideo) {
             scaffoldMessenger.showLoadingSnackBar(l10n.compressingVideo);
           }
-          // T131 (user, 2026-10-30, on the a build phone pass: "I just want
-          // to maintain quality with the original mp4"): a Convert to gif clip
-          // keeps its source bytes and is marked as a GIF. Telegram does the
-          // same - `isNewGifDocument()` (`MessageObject.java:6984-7003`) calls a
-          // `video/mp4` document a GIF when both sides are <= 1280 px, and never
-          // re-encodes one. `getVideoInfo()` is not an option here: it ignores
-          // its `compress` flag and runs LightCompressor on every mobile video
-          // send, so the paths that must keep quality read metadata with
-          // `getMediaInfo()` and take the bytes as they are.
+          // `getVideoInfo()` is not an option on the quality paths: it ignores
+          // its own `compress` flag and runs LightCompressor on every mobile
+          // video send, so a path that must keep the source pixels reads the
+          // bytes as they are (T131.1).
           file = compressThisVideo
               ? await xfile.getVideoInfo()
               : await xfile.getVideoFileUncompressed();
+          // T143 (user, 2026-10-30: "I want to switch back to actually
+          // converting mp4 to animated webp on the fly so that any matrix
+          // client can see it. And I want high quality outputs not low quality
+          // conversion"). T131's marker route is retired: it kept the mp4 bytes
+          // at full quality, but a client that does not know
+          // `org.fluffygram.gif` shows a plain video bubble, which is the half
+          // of the feature the group actually needs. Quality is bought at the
+          // two places the measurements named, NOT by keeping the container:
+          // the resize filter (nearest 25.61 dB vs average 36.64 dB against the
+          // same reference) and the pixel cap (1280 px, Telegram's own
+          // `isNewGifDocument` gate, so a clip keeps its source size unless it
+          // passes it). If the transcode returns null for any reason, the
+          // picked mp4 goes out unmarked exactly as an ordinary video does.
           if (convertToGif) {
-            sendAsGif = true;
-            debugPrint('[Mp4Gif] kept ${file.bytes.length} B (${xfile.name})');
+            final sourceBytes = file.bytes.length;
+            scaffoldMessenger.showLoadingSnackBar(l10n.compressingVideo);
+            final asGif = await telegramMp4ToGif(xfile.path);
+            if (asGif != null) {
+              file = asGif;
+              // A converted file never goes through matrix-dart's resize path:
+              // it would decode and re-encode a WebP we just encoded, through
+              // the same decoder that stops at an alpha frame.
+              shrinkImageMaxDimension = null;
+              debugPrint(
+                '[Mp4Gif] ${asGif.bytes.length} B from $sourceBytes B '
+                '(${asGif.width}x${asGif.height}, ${xfile.name})',
+              );
+            } else {
+              debugPrint(
+                '[Mp4Gif] kept $sourceBytes B, conversion returned null '
+                '(${xfile.name})',
+              );
+            }
           }
           scaffoldMessenger.clearSnackBars();
           if (!ForegroundServices.platformSupported) {
@@ -215,7 +248,6 @@ class SendFileDialogState extends State<SendFileDialog> {
         // carries its 1600 px cap, so matrix-dart's own resize path
         // (`matrix_file.dart:229-253`) must not decode and re-encode the WebP a
         // second time: that file sends with `shrinkImageMaxDimension: null`.
-        var shrinkImageMaxDimension = compress ? 1600 : null;
         if (compress &&
             file is MatrixImageFile &&
             file.mimeType == 'image/gif') {
@@ -225,13 +257,6 @@ class SendFileDialogState extends State<SendFileDialog> {
             shrinkImageMaxDimension = null;
           }
         }
-        // A GIF-marked clip sends its own bytes: matrix-dart's resize path
-        // (`matrix_file.dart:229-253`) must not touch them, so this file always
-        // sends with `shrinkImageMaxDimension: null`, at both call sites below.
-        if (sendAsGif) {
-          shrinkImageMaxDimension = null;
-        }
-
         // T142: "Send as sticker". The resize to Telegram's 512 px sticker
         // canvas happens here, in the fork, because matrix-dart's resize path
         // never sees this file: a sticker send does not go through
@@ -267,7 +292,7 @@ class SendFileDialogState extends State<SendFileDialog> {
             file,
             thumbnail: thumbnail,
             shrinkImageMaxDimension: shrinkImageMaxDimension,
-            extraContent: _extraContent(label, sendAsGif),
+            extraContent: _extraContent(label),
             threadRootEventId: widget.threadRootEventId,
             threadLastEventId: widget.threadLastEventId,
           );
@@ -286,7 +311,7 @@ class SendFileDialogState extends State<SendFileDialog> {
             file,
             thumbnail: thumbnail,
             shrinkImageMaxDimension: shrinkImageMaxDimension,
-            extraContent: _extraContent(label, sendAsGif),
+            extraContent: _extraContent(label),
           );
         }
       }
