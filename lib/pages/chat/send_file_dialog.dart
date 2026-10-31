@@ -3,12 +3,6 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Portions of the layout, geometry and behaviour of this file are derived
-// from Telegram for Android, Copyright (C) 2017-2026 Telegram FZ-LLC,
-// licensed under the GNU GPL v. 2 or later, and were changed by this fork
-// in 2026 to implement the same interface in Flutter/Dart. The source file
-// and line are cited where they were used. See NOTICE.
-
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 

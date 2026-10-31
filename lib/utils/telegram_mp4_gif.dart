@@ -3,6 +3,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Portions of the layout, geometry and behaviour of this file are derived
+// from Telegram for Android, Copyright (C) 2017-2026 Telegram FZ-LLC,
+// licensed under the GNU GPL v. 2 or later, and were changed by this fork
+// in 2026 to implement the same interface in Flutter/Dart. The source file
+// and line are cited where they were used. See NOTICE.
+
 import 'dart:async';
 import 'dart:isolate';
 import 'dart:math' as math;
@@ -54,17 +60,21 @@ const double _maxFps = 25;
 /// 25 is what a phone camera clip records at, so guessing 25 costs nothing real.
 const double _fallbackFps = 25;
 
-/// Wall-clock ceiling on the grab loop, in frames. One frame costs a seek plus a
-/// screenshot, measured at 101 ms for the seek route and 76 ms for mpv's
-/// sequential `frame-step` (`NativePlayer.command`, real.dart:1359) at 720x1280 -
-/// PNG encode/decode dominates, so the sampling route is not what to optimize.
-/// 150 frames therefore keeps the send-dialog wait near 15 s on Linux (a phone
-/// is slower), and a clip longer than that drops its SAMPLE RATE rather than
-/// making the sender wait: 8 s -> 18 fps, 15 s -> 10 fps.
-const int _maxFrames = 150;
+/// Wall-clock ceiling on the grab loop, in frames. **225 is a user's call
+/// (2026-10-30: "Can we do 50% more frames?" - from the 150 build 94 shipped
+/// with).** One frame costs a seek plus a screenshot, measured at 101 ms for the
+/// seek route and 76 ms for mpv's sequential `frame-step` (`NativePlayer.command`,
+/// real.dart:1359) at 720x1280 - PNG encode/decode dominates, so the sampling
+/// route is not what to optimize. 225 frames keeps a clip at its own rate up to
+/// 9 s at 25 fps, which covers the 8 s 1280x720 test clip in full (201 frames at
+/// 25 fps instead of 151 at 18.75), at about 22 s of send-dialog wait on Linux
+/// against build 94's 19.2 s and roughly 7.4 MB instead of 5.7 MB. Past that the
+/// clip drops its SAMPLE RATE rather than making the sender wait longer: 10 s at
+/// 30 fps -> 22.5 fps, 15 s at 25 fps -> 15 fps.
+const int _maxFrames = 225;
 
-/// Longer clips are videos, not GIFs. At the 150-frame ceiling a 15 s clip is
-/// sampled at 10 fps.
+/// Longer clips are videos, not GIFs. At the 225-frame ceiling a 15 s clip is
+/// sampled at 15 fps.
 const Duration _defaultMaxDuration = Duration(seconds: 15);
 
 /// Output ceiling in BYTES. Frames are encoded one at a time and assembled
@@ -72,7 +82,9 @@ const Duration _defaultMaxDuration = Duration(seconds: 15);
 /// RGBA frames and memory stopped being the limit - the upload size is. A
 /// 921,600 px frame at quality 90 measures 36 KB encoded, so a 150-frame clip at
 /// 720p lands near 5.4 MB, and 12 MB still refuses a clip the group could not
-/// download.
+/// download. This ceiling is also what picks the encoder: a clip small enough to
+/// be bit-exact under it gets VP8L, the rest get q100, and q90 is the floor
+/// (`_chooseMode`, T144).
 ///
 /// Holding every frame was the old design's wall (30 M pixel-frames ~ 120 MB of
 /// RGBA). The receiving side never paid it: Flutter's own decoder
@@ -81,22 +93,40 @@ const Duration _defaultMaxDuration = Duration(seconds: 15);
 /// one frame at a time. The sender now does the same.
 const int _maxOutputBytes = 12 * 1024 * 1024;
 
-/// Quality 90 / method 3 / lossy. T131 raised the quality from T123's 75: the
-/// a user's finding was that a converted clip looked worse than the mp4 it came
-/// from, and the measurements put that loss in the resize filter first
-/// (nearest-neighbour 25.61 dB vs area-average 36.64 dB against the same
-/// reference) with the codec second; 75 -> 90 measured +0.2 dB at 480x270.
-/// Method went 4 -> 3 for the same reason in reverse: at 1280x720 it measures
-/// 111 ms against method 4's 213 ms with the output within noise (35.24 dB vs
-/// 35.23 dB, 36,160 B vs 36,382 B) - the encode is what the phone spends its
-/// seconds on, and method 2 (40 ms, 35.22 dB, +5 % bytes) is the next stop if it
-/// is still too slow.
+/// The encoder for one clip: the best of three modes the byte ceiling can hold
+/// (T144, 2026-10-31: lossless WebP when it fits, else q100). Measured on a
+/// 480x250 clip - 27 frames, H.264 at 905 kbps, itself a GIF already converted
+/// to mp4 - against that mp4's own decoded frames:
+///
+/// | mode | frame 0 | mean per frame | max / first | PSNR vs the source |
+/// | --- | --- | --- | --- | --- |
+/// | VP8L lossless | 94,544 B | 102,892 B | 1.11 | exact |
+/// | q100 method 3 | 38,568 B | 44,158 B | 1.16 | 45.44 dB |
+/// | q90 method 3 | 22,040 B | 21,356 B | 1.00 | 41.40 dB |
+///
+/// One frame therefore predicts the whole clip within 16 %, and
+/// [_projectionMarginNum] / [_projectionMarginDen] (1.5x) keeps the difference.
+/// Method 6 was measured and rejected: 1,158,078 B at 45.39 dB against method
+/// 3's 1,192,254 B at 45.44 dB - 2.9 % fewer bytes for 1.93x the encode time and
+/// LOWER quality. q90 stays as the floor so a clip that fits today still
+/// converts: the whole point is never to lose a GIF the group could download.
+///
 /// `encodeWebP` is lossless by default, and in that mode `quality` and `method`
 /// do nothing (`image-4.12.0/lib/src/formats/formats.dart:525-538`), so all
 /// three stay explicit.
-const int _webpQuality = 90;
+final class _WebpMode {
+  final bool lossless;
+  final int quality;
+  const _WebpMode(this.lossless, this.quality);
+  String get label => lossless ? 'VP8L lossless' : 'lossy q$quality';
+}
+
+const _WebpMode _modeLossless = _WebpMode(true, 100);
+const _WebpMode _modeHigh = _WebpMode(false, 100);
+const _WebpMode _modeBase = _WebpMode(false, 90);
 const int _webpMethod = 3;
-const bool _webpLossless = false;
+const int _projectionMarginNum = 3;
+const int _projectionMarginDen = 2;
 
 /// mpv takes a moment to build its internals, and longer to load the first
 /// frame of a file. Over either timeout the conversion is abandoned and the
@@ -325,7 +355,13 @@ Future<MatrixImageFile?> telegramMp4ToGif(
       anmf.add(_anmfPayload(outW, outH, stepMs, _webpFrameChunks(still)));
     }
 
-    addStill(_encodeStill(firstFrame, outW, outH));
+    // The encoder is chosen from frame 0's own cost before any other frame is
+    // encoded: a small clip gets bit-exact VP8L, a big one keeps a size the
+    // group can download (T144).
+    final firstPrepared = _prepareFrame(firstFrame, outW, outH);
+    if (firstPrepared == null) return null;
+    final (mode, firstStill) = _chooseMode(firstPrepared, frameCount, maxOutputBytes);
+    addStill(firstStill);
     final grabDeadline = DateTime.now().add(_grabBudget);
     // The encode of frame i-1 runs while mpv seeks and screenshots frame i: one
     // side is native, the other an isolate, so the loop costs the grab (~110 ms)
@@ -344,7 +380,13 @@ Future<MatrixImageFile?> telegramMp4ToGif(
       // measured - the copy costs ~1 ms and is what makes the worker usable).
       final shot = Uint8List.fromList(grabbed);
       final previous = inFlight;
-      inFlight = _encodeOffThread(shot, outW, outH);
+      inFlight = _encodeOffThread(
+        shot,
+        outW,
+        outH,
+        mode.lossless,
+        mode.quality,
+      );
       if (previous != null) addStill(await previous);
       if (overflow) break;
     }
@@ -409,28 +451,79 @@ Future<Uint8List?> _grab(Player player, Duration at) async {
 /// `Illegal argument in isolate message: object is unsendable - Class:
 /// _AsyncCompleter` (measured). A plain copy of the screenshot bytes goes in,
 /// because media_kit's own `Uint8List` is native-backed and equally unsendable.
-Future<Uint8List> _encodeOffThread(Uint8List shot, int outW, int outH) =>
-    Isolate.run(() => _encodeShot(shot, outW, outH));
+Future<Uint8List> _encodeOffThread(
+  Uint8List shot,
+  int outW,
+  int outH,
+  bool lossless,
+  int quality,
+) => Isolate.run(() => _encodeShot(shot, outW, outH, lossless, quality));
 
 /// PNG screenshot bytes in, single-frame lossy WebP out: decode, resize, strip
 /// alpha, encode. This is what runs in a fresh isolate for every frame after the
 /// first, so converting a 100-frame clip leaves the send dialog responsive. An
 /// empty result means "skip this frame" and the caller keeps looping.
-Uint8List _encodeShot(Uint8List shot, int outW, int outH) {
+Uint8List _encodeShot(
+  Uint8List shot,
+  int outW,
+  int outH,
+  bool lossless,
+  int quality,
+) {
   final decoded = img.decodeImage(shot);
   if (decoded == null) return Uint8List(0);
-  return _encodeStill(decoded, outW, outH);
-}
-
-Uint8List _encodeStill(img.Image decoded, int outW, int outH) {
   final frame = _prepareFrame(decoded, outW, outH);
   if (frame == null) return Uint8List(0);
-  return img.encodeWebP(
-    frame,
-    lossless: _webpLossless,
-    quality: _webpQuality,
-    method: _webpMethod,
+  return _encodePrepared(frame, _WebpMode(lossless, quality));
+}
+
+Uint8List _encodePrepared(img.Image frame, _WebpMode mode) => img.encodeWebP(
+  frame,
+  lossless: mode.lossless,
+  quality: mode.quality,
+  method: _webpMethod,
+);
+
+/// Encodes frame 0 in each candidate mode, best first, and returns the first
+/// mode whose projected whole-clip size fits [maxOutputBytes] - with that
+/// frame's bytes, so the caller does not encode it twice. When nothing fits,
+/// q90 goes back and the loop's own ceiling check makes the call, which is what
+/// build 95 did: the clip then sends as a video rather than as a truncated GIF.
+///
+/// The projection is frame 0 x frame count x [_projectionMarginNum] /
+/// [_projectionMarginDen]. Measured max/first on a user's clip: 1.11
+/// lossless, 1.16 at q100, 1.00 at q90 - so 1.5x absorbs the motion frames.
+/// Each probe encodes a copy, because `encodeWebP` quantizes into the image it
+/// is given and a mutated frame 0 would report the wrong size for the next mode.
+(_WebpMode, Uint8List) _chooseMode(
+  img.Image firstFrame,
+  int frameCount,
+  int maxOutputBytes,
+) {
+  (_WebpMode, Uint8List)? fits;
+  (_WebpMode, Uint8List)? smallest;
+  for (final mode in const [_modeLossless, _modeHigh, _modeBase]) {
+    final still = _encodePrepared(firstFrame.clone(), mode);
+    final projected =
+        still.length *
+        frameCount *
+        _projectionMarginNum ~/ _projectionMarginDen;
+    if (projected <= maxOutputBytes) {
+      fits ??= (mode, still);
+      break;
+    }
+    _log(
+      '[Mp4Gif] ${mode.label}: frame 0 is ${still.length} B, projects '
+      '$projected B for $frameCount frames - over $maxOutputBytes',
+    );
+    smallest = (mode, still);
+  }
+  final chosen = fits ?? smallest!;
+  _log(
+    '[Mp4Gif] encoder ${chosen.$1.label} - frame 0 ${chosen.$2.length} B for '
+    '$frameCount frames',
   );
+  return chosen;
 }
 
 /// The parts of a single-frame WebP that belong inside an ANMF chunk: the
