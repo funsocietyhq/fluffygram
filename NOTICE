@@ -23,6 +23,7 @@ Telegram for Android:
   lib/pages/chat/chat.dart
   lib/pages/chat/chat_app_bar_title.dart
   lib/pages/chat/chat_emoji_picker.dart
+  lib/pages/chat/chat_input_row.dart
   lib/pages/chat/chat_search_panel.dart
   lib/pages/chat/chat_view.dart
   lib/pages/chat/composer_geometry.dart

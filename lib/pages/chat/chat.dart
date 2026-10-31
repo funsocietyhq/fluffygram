@@ -168,6 +168,8 @@ class ChatController extends State<ChatPageWithRoom>
         outerContext: context,
         threadRootEventId: activeThreadId,
         threadLastEventId: threadLastEventId,
+        inReplyTo: replyEvent,
+        onSendStarted: _consumeReplyForMediaSend,
       ),
     );
   }
@@ -378,6 +380,8 @@ class ChatController extends State<ChatPageWithRoom>
         outerContext: context,
         threadRootEventId: activeThreadId,
         threadLastEventId: threadLastEventId,
+        inReplyTo: replyEvent,
+        onSendStarted: _consumeReplyForMediaSend,
       ),
     );
   }
@@ -863,9 +867,11 @@ class ChatController extends State<ChatPageWithRoom>
         'url': sticker.url.toString(),
       },
       type: EventTypes.Sticker,
+      inReplyTo: replyEvent,
       threadRootEventId: activeThreadId,
       threadLastEventId: threadLastEventId,
     );
+    _consumeReplyForMediaSend();
     await RecentStickers.record(sticker.url);
   }
 
@@ -936,38 +942,42 @@ class ChatController extends State<ChatPageWithRoom>
     final image = gif.video
         ? MatrixVideoFile(
             bytes: bytes,
-            name: '${Uri.parse(gif.url).pathSegments.last}.${gif.fileExtension}',
+            name:
+                '${Uri.parse(gif.url).pathSegments.last}.${gif.fileExtension}',
             mimeType: gif.mimeType,
             width: gif.w > 0 ? gif.w : null,
             height: gif.h > 0 ? gif.h : null,
           )
         : MatrixImageFile(
-      bytes: bytes,
-      // T124: the extension follows the row's mimetype. matrix-dart picks an
-      // image encoder from the file name in its resize path
-      // (`matrix_file.dart:229-253`, `encodeNamedImage(fileName)`); this call
-      // passes no shrink argument, so a `.gif` name on webp bytes is a wrong
-      // hint rather than a wrong encode.
-      name: '${Uri.parse(gif.url).pathSegments.last}.${gif.fileExtension}',
-      // T124: not pinned to `image/gif` any more. The pin made a replayed WebP
-      // GIF an event whose `info` claimed gif while its `file` said webp, and
-      // other Matrix clients label the bubble from `info`; this fork hid the
-      // mismatch because it sniffs magic bytes. T123 widened
-      // `telegramEventIsGif()` to `image/webp` on an `m.image`, so the send is
-      // still recognised as a GIF without the pin - the T56.2.1 reason for it
-      // no longer holds.
-      mimeType: gif.mimeType,
-      width: gif.w > 0 ? gif.w : null,
-      height: gif.h > 0 ? gif.h : null,
-    );
+            bytes: bytes,
+            // T124: the extension follows the row's mimetype. matrix-dart picks an
+            // image encoder from the file name in its resize path
+            // (`matrix_file.dart:229-253`, `encodeNamedImage(fileName)`); this call
+            // passes no shrink argument, so a `.gif` name on webp bytes is a wrong
+            // hint rather than a wrong encode.
+            name:
+                '${Uri.parse(gif.url).pathSegments.last}.${gif.fileExtension}',
+            // T124: not pinned to `image/gif` any more. The pin made a replayed WebP
+            // GIF an event whose `info` claimed gif while its `file` said webp, and
+            // other Matrix clients label the bubble from `info`; this fork hid the
+            // mismatch because it sniffs magic bytes. T123 widened
+            // `telegramEventIsGif()` to `image/webp` on an `m.image`, so the send is
+            // still recognised as a GIF without the pin - the T56.2.1 reason for it
+            // no longer holds.
+            mimeType: gif.mimeType,
+            width: gif.w > 0 ? gif.w : null,
+            height: gif.h > 0 ? gif.h : null,
+          );
     try {
       await room.sendFileEvent(
         image,
+        inReplyTo: replyEvent,
         // The marker rides along, or the replay is an ordinary video bubble.
         extraContent: gif.video ? {telegramMp4GifContentKey: true} : null,
         threadRootEventId: activeThreadId,
         threadLastEventId: threadLastEventId,
       );
+      _consumeReplyForMediaSend();
     } catch (e) {
       if (!mounted) return;
       scaffoldMessenger.showSnackBar(
@@ -998,9 +1008,11 @@ class ChatController extends State<ChatPageWithRoom>
           telegramMp4GifContentKey: true,
         },
         type: EventTypes.Message,
+        inReplyTo: replyEvent,
         threadRootEventId: activeThreadId,
         threadLastEventId: threadLastEventId,
       );
+      _consumeReplyForMediaSend();
       return;
     }
     await room.sendEvent(
@@ -1017,9 +1029,11 @@ class ChatController extends State<ChatPageWithRoom>
         'file': ?file,
       },
       type: EventTypes.Message,
+      inReplyTo: replyEvent,
       threadRootEventId: activeThreadId,
       threadLastEventId: threadLastEventId,
     );
+    _consumeReplyForMediaSend();
   }
 
   Future<void> sendFileAction({FileType type = FileType.any}) async {
@@ -1034,6 +1048,8 @@ class ChatController extends State<ChatPageWithRoom>
         outerContext: context,
         threadRootEventId: activeThreadId,
         threadLastEventId: threadLastEventId,
+        inReplyTo: replyEvent,
+        onSendStarted: _consumeReplyForMediaSend,
       ),
     );
   }
@@ -1048,6 +1064,8 @@ class ChatController extends State<ChatPageWithRoom>
         outerContext: context,
         threadRootEventId: activeThreadId,
         threadLastEventId: threadLastEventId,
+        inReplyTo: replyEvent,
+        onSendStarted: _consumeReplyForMediaSend,
       ),
     );
   }
@@ -1071,6 +1089,8 @@ class ChatController extends State<ChatPageWithRoom>
         outerContext: context,
         threadRootEventId: activeThreadId,
         threadLastEventId: threadLastEventId,
+        inReplyTo: replyEvent,
+        onSendStarted: _consumeReplyForMediaSend,
       ),
     );
   }
@@ -1090,6 +1110,8 @@ class ChatController extends State<ChatPageWithRoom>
         outerContext: context,
         threadRootEventId: activeThreadId,
         threadLastEventId: threadLastEventId,
+        inReplyTo: replyEvent,
+        onSendStarted: _consumeReplyForMediaSend,
       ),
     );
   }
@@ -1133,6 +1155,8 @@ class ChatController extends State<ChatPageWithRoom>
         outerContext: context,
         threadRootEventId: activeThreadId,
         threadLastEventId: threadLastEventId,
+        inReplyTo: replyEvent,
+        onSendStarted: _consumeReplyForMediaSend,
       ),
     );
   }
@@ -1149,6 +1173,8 @@ class ChatController extends State<ChatPageWithRoom>
           outerContext: context,
           threadRootEventId: activeThreadId,
           threadLastEventId: threadLastEventId,
+          inReplyTo: replyEvent,
+          onSendStarted: _consumeReplyForMediaSend,
         ),
       );
       return;
@@ -1196,6 +1222,8 @@ class ChatController extends State<ChatPageWithRoom>
         outerContext: context,
         threadRootEventId: activeThreadId,
         threadLastEventId: threadLastEventId,
+        inReplyTo: replyEvent,
+        onSendStarted: _consumeReplyForMediaSend,
       ),
     );
   }
@@ -1944,6 +1972,14 @@ class ChatController extends State<ChatPageWithRoom>
     replyEvent = null;
     editEvent = null;
   });
+
+  /// T148: a media send consumes the reply the composer holds and nothing else.
+  /// Telegram keeps the pending reply while you pick the media and drops it when
+  /// the send starts; an edit in progress stays in the strip.
+  void _consumeReplyForMediaSend() {
+    if (replyEvent == null) return;
+    setState(() => replyEvent = null);
+  }
 
   void startOrJoinVideoCall() {
     Matrix.of(context).activeCallRoomId.value = room.id;

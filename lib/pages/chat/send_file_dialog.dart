@@ -38,12 +38,24 @@ class SendFileDialog extends StatefulWidget {
   final BuildContext outerContext;
   final String? threadLastEventId, threadRootEventId;
 
+  /// T148 (user, 2026-10-31: "i can't seem to reply to someone with an
+  /// attachment or GIF"): the reply the composer is holding. Telegram sends the
+  /// photo, video, file or sticker WITH the pending reply quote - the send takes
+  /// the reply, the bubble paints it, and the strip clears when the send starts.
+  final Event? inReplyTo;
+
+  /// Called once the send is under way, so the composer can drop the reply it
+  /// just handed over. A cancelled dialog never calls it.
+  final VoidCallback? onSendStarted;
+
   const SendFileDialog({
     required this.room,
     required this.files,
     required this.outerContext,
     required this.threadLastEventId,
     required this.threadRootEventId,
+    this.inReplyTo,
+    this.onSendStarted,
     super.key,
   });
 
@@ -131,6 +143,8 @@ class SendFileDialogState extends State<SendFileDialog> {
         throw OtherPartyCanNotReceiveMessages();
       }
       if (!mounted) return;
+      // The reply is consumed by this send, so the strip goes with the dialog.
+      widget.onSendStarted?.call();
       Navigator.of(context, rootNavigator: false).pop();
       final clientConfig = await Result.capture(widget.room.client.getConfig());
       final maxUploadSize =
@@ -287,6 +301,7 @@ class SendFileDialogState extends State<SendFileDialog> {
             thumbnail: thumbnail,
             shrinkImageMaxDimension: shrinkImageMaxDimension,
             extraContent: _extraContent(label),
+            inReplyTo: widget.inReplyTo,
             threadRootEventId: widget.threadRootEventId,
             threadLastEventId: widget.threadLastEventId,
           );
@@ -306,6 +321,7 @@ class SendFileDialogState extends State<SendFileDialog> {
             thumbnail: thumbnail,
             shrinkImageMaxDimension: shrinkImageMaxDimension,
             extraContent: _extraContent(label),
+            inReplyTo: widget.inReplyTo,
           );
         }
       }
@@ -348,6 +364,7 @@ class SendFileDialogState extends State<SendFileDialog> {
         'info': {...sticker.info},
       },
       type: EventTypes.Sticker,
+      inReplyTo: widget.inReplyTo,
       threadRootEventId: widget.threadRootEventId,
       threadLastEventId: widget.threadLastEventId,
     );

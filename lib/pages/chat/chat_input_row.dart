@@ -3,6 +3,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Portions of the layout, geometry and behaviour of this file are derived
+// from Telegram for Android, Copyright (C) 2017-2026 Telegram FZ-LLC,
+// licensed under the GNU GPL v. 2 or later, and were changed by this fork
+// in 2026 to implement the same interface in Flutter/Dart. The source file
+// and line are cited where they were used. See NOTICE.
+
 import 'package:emoji_picker_flutter/locales/default_emoji_set_locale.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/telegram_palette.dart';
@@ -32,9 +38,16 @@ class ChatInputRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // T148 (user, 2026-10-31: "are you sure i can actually open the picker /
+    // gif tray when it's a reply now?"). This flag drives exactly one thing -
+    // the paperclip's width further down this row - and upstream folded a
+    // pending reply into it, so the attachment popup collapsed to 0 dp the
+    // moment a reply was held: no gallery, no camera, no file. A reply could
+    // therefore never carry media, whatever the send path did with it. Telegram
+    // keeps its attach button while the reply line is shown, so only typed text
+    // and an edit in progress collapse the popup now.
     final textMessageOnly =
         controller.sendController.text.isNotEmpty ||
-        controller.replyEvent != null ||
         controller.editEvent != null;
 
     if (!controller.room.otherPartyCanReceiveMessages) {
