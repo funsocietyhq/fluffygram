@@ -42,8 +42,22 @@ abstract final class TelegramComposerGeometry {
   /// height as the pill.
   static const double sideButtonDiameter = 44;
 
-  /// `composer_emoji_button_diameter_dp` - the smaller circle in the row.
-  static const double emojiButtonDiameter = 33;
+  /// `composer_emoji_button_diameter_dp` - the box of the button at the pill's
+  /// left end, which opens the emoji / GIF / sticker tray. Telegram gives it
+  /// `DEFAULT_HEIGHT x DEFAULT_HEIGHT` = **44 x 44 dp** with a `dp(2)` left inset
+  /// (`ChatActivityEnterView.java:2755`, `DEFAULT_HEIGHT = 44` at `:6469`), and
+  /// the glyph inside is smaller than the box: the GIF badge Telegram draws there
+  /// measures **25 x 22 dp** of ink in `the reference capture` (x = 50..115,
+  /// y = 2250..2303 at 2.625 px/dp). The 33 dp this fork carried was the glyph, not
+  /// the box - user, 2026-10-31: "make the left tray button the same too".
+  static const double emojiButtonDiameter = 44;
+
+  /// The gap between the left button's box and the text. Measured on the same
+  /// capture: Telegram's 44 dp box ends at x = 19 px + dp(2) + 44 dp = 139.75 px
+  /// and the hint ink starts at x = 151 px, so the gap is 11.25 px = **4.3 dp**.
+  /// With [edgeMargin] 9 and a 44 dp box this puts our text ink on x = 57.5 dp,
+  /// which is where Telegram's sits (151 px at 2.625 px/dp).
+  static const double buttonTextGap = 4.5;
 
   /// `composer_h_margin_dp` - the row's margin from the screen edge.
   static const double edgeMargin = 9;
@@ -59,21 +73,31 @@ abstract final class TelegramComposerGeometry {
   static const double leftColumnGap =
       pillLeftInset - edgeMargin - sideButtonDiameter - emojiButtonDiameter;
 
-  /// `composer_text_sp` - the field's text and hint size.
-  static const double textFontSize = 16;
+  /// `composer_text_dp` - the field's text and hint size. Telegram sets it in
+  /// source: `messageEditText.setTextSize(COMPLEX_UNIT_DIP, 18)` at
+  /// `ChatActivityEnterView.java:5811`. The 16 this fork carried came from a
+  /// capture read; the ink says 18 too - the hint "Message" spans y = 2247..2309
+  /// = 63 px = 24 dp of ascender-plus-descender at 2.625 px/dp, which is the 1.17
+  /// em line the message text uses at an 18 dp size, not at 16. Owner,
+  /// 2026-10-31: "Make the text input the same size as telegram".
+  static const double textFontSize = 18;
 
   /// Field line height, the same ratio the message text uses (1.22).
   static const double textLineHeight = 1.22;
 
   /// How many text lines fit inside the pill's [fieldMaxHeight] box -
   /// `(fieldMaxHeight - 2 * pillVerticalPadding) / (textFontSize *
-  /// textLineHeight)` = 6.1 - passed to the field as `maxLines` so the field
-  /// never grows past the measured maximum.
-  static const int maxFieldLines = 6;
+  /// textLineHeight)` = (140 - 20) / (18 * 1.22) = 5.5 - passed to the field as
+  /// `maxLines` so the field never grows past the measured maximum. It was 6 while
+  /// [textFontSize] was 16.
+  static const int maxFieldLines = 5;
 
   // --- values the target does not measure (layout padding, glyph size) ---
 
-  /// Inner padding of the pill, left and right of the text. Not measured.
+  /// Inner padding of the pill on the text's **right** side, between the text and
+  /// the paperclip. Telegram's paperclip ink ends 21.7 dp inside the pill's right
+  /// edge (`the reference capture`); the 44 dp button box plus this gap
+  /// covers it. The left side uses [buttonTextGap] instead.
   static const double pillHorizontalPadding = 16;
 
   /// Inner padding of the pill, above and below the text. Not measured.

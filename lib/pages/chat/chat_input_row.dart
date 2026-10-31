@@ -175,11 +175,15 @@ class ChatInputRow extends StatelessWidget {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: <Widget>[
-                            // Telegram's left badge slot holds its GIF search box
-                            // (ink box x 54..115 = 23 dp wide, its left edge 12.9 dp
-                            // inside the pill). FluffyChat has no GIF provider, so
-                            // the emoji toggle takes this slot - user decision
-                            // 2026-10-26. Flat and grey, behaviour unchanged.
+                            // Telegram's left button slot is a **44 x 44 dp** box
+                            // (`ChatActivityEnterView.java:2755`, `DEFAULT_HEIGHT = 44`
+                            // at `:6469`); its glyph is smaller than the box, the GIF
+                            // badge it draws there measuring 25 x 22 dp of ink (x =
+                            // 54..115, y = 2250..2303 in
+                            // `the reference capture`). FluffyChat has no GIF
+                            // provider, so the emoji toggle takes this slot - user
+                            // decision 2026-10-26. Flat and grey, behaviour unchanged;
+                            // the box went from 33 dp to 44 dp on 2026-10-31 (T147).
                             SizedBox(
                               width:
                                   TelegramComposerGeometry.emojiButtonDiameter,
@@ -201,11 +205,17 @@ class ChatInputRow extends StatelessWidget {
                             ),
                             Expanded(
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: TelegramComposerGeometry
+                                // T147: the left gap is the measured one - Telegram's
+                                // 44 dp button box ends 4.3 dp before its text ink, so
+                                // the text keeps landing on 57.5 dp from the screen
+                                // edge now that the box is 44 dp wide. The right side
+                                // keeps the wider gap in front of the paperclip.
+                                padding: const EdgeInsets.fromLTRB(
+                                  TelegramComposerGeometry.buttonTextGap,
+                                  TelegramComposerGeometry.pillVerticalPadding,
+                                  TelegramComposerGeometry
                                       .pillHorizontalPadding,
-                                  vertical: TelegramComposerGeometry
-                                      .pillVerticalPadding,
+                                  TelegramComposerGeometry.pillVerticalPadding,
                                 ),
                                 child: InputBar(
                                   room: controller.room,

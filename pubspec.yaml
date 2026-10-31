@@ -11,7 +11,7 @@ publish_to: none
 # the installed build 22, which carries 3591 - Android blocks a downgrade.
 # Group builds go back to upstream 2.11.2+3572 plus one per shipped build,
 # per docs/BUILD.md.
-version: 2.11.2+3672
+version: 2.11.2+3675
 
 environment:
   sdk: ">=3.11.1 <4.0.0"

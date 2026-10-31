@@ -16,6 +16,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:fluffychat/config/recent_gifs.dart';
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/telegram_palette.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/sticker_picker_dialog.dart';
@@ -73,21 +74,49 @@ const double _gridBottomPaddingDp = 48;
 /// search field, so nothing sits above the tiles.
 const double _gifGridBottomPaddingDp = 44;
 
-/// The share of the area under the action bar the tray panel owns. Telegram's
-/// grid top padding is `availableHeight * 2/5 - dp(52) + dp(36)`, which leaves
-/// `availableHeight * 3/5 + 16 dp` for the panel.
-/// Telegram ChatAttachAlertEmojiLayout.java:155-173
-const double _panelShare = 3 / 5;
-const double _panelFixupDp = 16;
+/// T145 (user, 2026-10-31, capture `the reference capture`: "Gif tray
+/// isn't really similar"): the tray panel is as tall as **the soft keyboard it
+/// replaces**. Telegram keeps one measured IME height and hands it to every
+/// panel that takes the keyboard's place (`ChatActivityEnterView.java:12561,
+/// :12717, :13620`). Measured on that capture - 1080 px wide at 2.625 px/dp, a
+/// 2424 px (923 dp) screen - the panel's top, the GIF search row, sits at
+/// y=1543 px, so the panel is 881 px = **336 dp**, 36 % of the screen, and the
+/// grid under it is 283 dp: under three rows of ~100 dp tiles.
+///
+/// The share this file used to apply, `availableHeight * 3/5 + 16 dp` from the
+/// **old** attach alert (`ChatAttachAlertEmojiLayout.java:155-173`), gives 520
+/// dp on that screen: 184 dp too tall, five tile rows where Telegram shows
+/// under three. Measurement: `the measurement log`.
+const double _telegramPanelShare = 336 / 923;
 
-/// The tray panel height: the lower three fifths of the area under the app bar.
-/// Telegram ChatAttachAlertEmojiLayout.java:155-173
+/// The tallest keyboard inset this app run has shown, in logical pixels. The
+/// live one is `MediaQuery.viewInsets.bottom`; Telegram measures its keyboard
+/// once and caches it, so the tray holds one height across chats instead of
+/// following whatever keyboard was up last.
+double? _imeInsetDp;
+
+/// The tray panel height: the keyboard height Telegram's panel equals, or the
+/// measured 36 % share while this run has not opened a keyboard yet.
 double _telegramPanelHeight(BuildContext context) =>
-    (MediaQuery.sizeOf(context).height -
-            MediaQuery.paddingOf(context).top -
-            kToolbarHeight) *
-        _panelShare +
-    _panelFixupDp;
+    _imeInsetDp ?? MediaQuery.sizeOf(context).height * _telegramPanelShare;
+
+/// T146 (user, 2026-10-31: "The gap between the text bar and the gif tray isn't
+/// there either"): Telegram leaves **chat background** between the composer pill
+/// and the tray panel. Measured on `the reference capture`: the pill's
+/// bottom edge sits at y=1520 px and the panel's fill starts at y=1543 px, so the
+/// band is 23 px = **8.8 dp** at 2.625 px/dp, and it reads `srgb(0,0,0)` - the
+/// chat background, not the panel's `srgb(23,23,23)` fill. The fork's composer
+/// row ends at the pill's own bottom, so without this band the panel butts
+/// against the text bar.
+const double _trayGapDp = 9;
+
+/// The tray panel fill. Measured on the same capture: the panel and the composer
+/// card carry the **same** fill, `srgb(23,23,23)` = #171717 = `composerPill`, on
+/// a `srgb(0,0,0)` chat background. Telegram's night attheme states
+/// `chat_emojiPanelBackground = #1E1E1F` (`night.attheme`), 4 levels lighter than
+/// its own capture; the capture wins, as it did for the composer card.
+/// `colorScheme.onInverseSurface` - what this file used - is Material 3's seeded
+/// inverse surface (about #2B2926 here): too light, and tinted.
 
 class ChatEmojiPicker extends StatelessWidget {
   final ChatController controller;
@@ -96,12 +125,20 @@ class ChatEmojiPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // T145: this widget is in the tree whenever the chat page is - an
+    // `AnimatedContainer` of height 0 while the tray is shut - so a keyboard
+    // frame is a sample of the inset the panel will want. The 100 dp floor
+    // ignores a navigation-bar inset, which is not a keyboard.
+    final imeInset = MediaQuery.viewInsetsOf(context).bottom;
+    if (imeInset > 100 && imeInset > (_imeInsetDp ?? 0)) _imeInsetDp = imeInset;
     return AnimatedContainer(
       duration: FluffyThemes.animationDuration,
       curve: FluffyThemes.animationCurve,
       clipBehavior: Clip.hardEdge,
       decoration: const BoxDecoration(),
-      height: controller.showEmojiPicker ? _telegramPanelHeight(context) : 0,
+      height: controller.showEmojiPicker
+          ? _telegramPanelHeight(context) + _trayGapDp
+          : 0,
       child: controller.showEmojiPicker
           ? DefaultTabController(
               length: 3,
@@ -117,7 +154,11 @@ class ChatEmojiPicker extends StatelessWidget {
               // (EmojiView.java:2676, :2703).
               child: Stack(
                 children: [
+                  // T146: the pages start 9 dp below the top of the panel, so a
+                  // band of chat background sits between the composer pill and
+                  // the tray. The strip stays pinned to the panel bottom.
                   Positioned.fill(
+                    top: _trayGapDp,
                     child: TabBarView(
                       children: [
                         EmojiPicker(
@@ -127,8 +168,7 @@ class ChatEmojiPicker extends StatelessWidget {
                             locale: Localizations.localeOf(context),
                             emojiViewConfig: EmojiViewConfig(
                               noRecents: const NoRecent(),
-                              backgroundColor:
-                                  theme.colorScheme.onInverseSurface,
+                              backgroundColor: TelegramPalette.composerPill,
                               // Telegram's emoji cell is 45 dp on a phone and
                               // the grid is one column per cell.
                               // Telegram EmojiView.java:3013
@@ -441,7 +481,9 @@ class _GifPickerViewState extends State<GifPickerView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
-      color: theme.colorScheme.onInverseSurface,
+      // T146: Telegram's tray fill, measured #171717 - the composer card's own
+      // fill, not Material 3's inverse surface.
+      color: TelegramPalette.composerPill,
       child: SafeArea(
         top: false,
         // T56.2.2: the grid is an `AnimatedBuilder` on the store and reads it
@@ -691,15 +733,16 @@ class _TelegramGifTileState extends State<_TelegramGifTile> {
     return _file == null
         ? const SizedBox.shrink()
         : Image(
-          image: _tileImage(context),
-          width: widget.cell.w,
-          height: widget.cell.h,
-          fit: BoxFit.cover,
-          // A file that leaves the cache (evicted while the tray is open) is
-          // not a reason to paint a glyph: keep the last frame's box.
-          gaplessPlayback: true,
-          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-        );
+            image: _tileImage(context),
+            width: widget.cell.w,
+            height: widget.cell.h,
+            fit: BoxFit.cover,
+            // A file that leaves the cache (evicted while the tray is open) is
+            // not a reason to paint a glyph: keep the last frame's box.
+            gaplessPlayback: true,
+            errorBuilder: (context, error, stackTrace) =>
+                const SizedBox.shrink(),
+          );
   }
 
   /// The tile's picture, **decoded inside the tile's own pixel box**. An

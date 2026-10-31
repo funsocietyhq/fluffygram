@@ -11,6 +11,7 @@
 
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/recent_stickers.dart';
+import 'package:fluffychat/config/telegram_palette.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/url_launcher.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
@@ -126,7 +127,9 @@ class StickerPickerDialogState extends State<StickerPickerDialog> {
     final packSlugs = stickerPacks.keys.toList();
 
     return Material(
-      color: theme.colorScheme.onInverseSurface,
+      // T146: Telegram's tray fill, measured #171717 on a user's capture -
+      // the composer card's own fill, not Material 3's inverse surface.
+      color: TelegramPalette.composerPill,
       child: SafeArea(
         top: false,
         child: CustomScrollView(
