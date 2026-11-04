@@ -142,7 +142,18 @@ class MessageContent extends StatelessWidget {
                 ? BoxFit.contain
                 : BoxFit.cover;
             if (w != null && h != null) {
-              fit = BoxFit.contain;
+              // T163 (user, 2026-11-05: "gifs and images are still not
+              // vertically filling the chat bubble", `the reference capture`):
+              // the box comes from the event's declared `info.w`/`info.h`, and a
+              // file whose real aspect differs from its declared one used to be
+              // LETTERBOXED inside that box - `contain` paints the bubble fill
+              // through the bands. Measured on that GIF: bubble box x 147..1050,
+              // y 766..1257 (903 x 491 px), media pixels x 150.., y 779..1245
+              // (897 x 466 px), so the fill showed as a 13 px = 5.0 dp band above
+              // and a 12 px = 4.6 dp band below at 2.625 px/dp. `cover` fills the
+              // box and trims the mismatch at the edges, which is what Telegram
+              // does: their media cell always fills its rect.
+              fit = BoxFit.cover;
               // T157: the box maths lives in ONE place - `mediaBoxForCap` - and
               // `message.dart` gives the row's bubble the same width, so the
               // bubble can never be wider than the media it holds.
@@ -221,9 +232,14 @@ class MessageContent extends StatelessWidget {
                   );
             // A sticker row keeps Telegram's box-less surface: no container, so
             // no inset strip around it.
-            return event.messageType == MessageTypes.Sticker
-                ? mediaWithMeta
-                : telegramMediaInset(mediaWithMeta);
+            // T163: a LONE photo, video or GIF is flush with its bubble on all
+            // four sides - the media IS the bubble, so the bubble's own rounded
+            // clip is the only corner in view. `telegramMediaInset`'s 1.5 dp strip
+            // is an ALBUM container measurement (`a measurement crop`: container x
+            // 156-921, first photo pixel x 160) and it only ever adds a gap here:
+            // measured 3 px = 1.1 dp at the media's left edge on
+            // `the reference capture`, where Telegram has none.
+            return mediaWithMeta;
           case CuteEventContent.eventType:
             return CuteContent(event);
           case MessageTypes.Audio:
@@ -244,17 +260,16 @@ class MessageContent extends StatelessWidget {
               linkColor: linkColor,
             );
           case MessageTypes.Video:
-            return telegramMediaInset(
-              EventVideoPlayer(
-                event,
-                textColor: textColor,
-                linkColor: linkColor,
-                timeline: timeline,
-                // T135: the media carries the bubble's corners, like ImageBubble
-                // above - a uniform AppConfig.borderRadius left a round corner
-                // where the bubble outline is tight.
-                borderRadius: borderRadius,
-              ),
+            // T163: flush, as for the image row above.
+            return EventVideoPlayer(
+              event,
+              textColor: textColor,
+              linkColor: linkColor,
+              timeline: timeline,
+              // T135: the media carries the bubble's corners, like ImageBubble
+              // above - a uniform AppConfig.borderRadius left a round corner
+              // where the bubble outline is tight.
+              borderRadius: borderRadius,
             );
           case MessageTypes.File:
             return MessageDownloadContent(
