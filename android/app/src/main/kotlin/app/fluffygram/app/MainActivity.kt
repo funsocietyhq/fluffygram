@@ -45,6 +45,13 @@ class MainActivity : FlutterFragmentActivity() {
      * function shipped with (T51, build 3604) died inside its own catch as a
      * swallowed `NoSuchMethodException` and the panel idled at 60 Hz (owner
      * finding, T63.2).
+     *
+     * T156: the request is gated to the panel's CURRENT physical size. A Pixel
+     * Pro panel puts its 120 Hz mode at the lower resolution and its 1440p mode
+     * at 60 Hz, so a refresh-rate request that ignores the size switches the
+     * resolution of this window - and with it its density, so the whole layout
+     * re-flows while only this app is in the foreground. Refresh rate is ours to
+     * ask for; resolution is not.
      */
     private fun selectHighRefreshMode() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
@@ -53,8 +60,18 @@ class MainActivity : FlutterFragmentActivity() {
         val win = window ?: return
         @Suppress("DEPRECATION")
         val display = windowManager.defaultDisplay ?: return
+        val active = display.mode
         var best: android.view.Display.Mode? = null
         for (mode in display.supportedModes) {
+            // T156: same resolution only. `Display.Mode` carries a physical
+            // size, and on Pixel Pro panels the high refresh modes sit at a
+            // smaller one than the native mode, so this filter is what keeps
+            // the request a refresh-rate request (see the doc comment above).
+            if (mode.physicalWidth != active.physicalWidth ||
+                mode.physicalHeight != active.physicalHeight
+            ) {
+                continue
+            }
             val candidate = best
             if (mode.refreshRate >= 90f &&
                 (candidate == null || mode.refreshRate > candidate.refreshRate)
@@ -62,7 +79,17 @@ class MainActivity : FlutterFragmentActivity() {
                 best = mode
             }
         }
-        val target = best ?: return
+        val target = best
+        if (target == null) {
+            // Every high refresh mode sits at another resolution, so asking for
+            // one would resize this window. Leave the panel alone.
+            Log.i(
+                "FLUFFYGRAM",
+                "no same-size high refresh mode: staying at " +
+                    "${active.physicalWidth}x${active.physicalHeight}@${active.refreshRate}Hz",
+            )
+            return
+        }
         try {
             val modeId = target.modeId
             val lp = win.attributes

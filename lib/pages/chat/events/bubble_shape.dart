@@ -162,6 +162,54 @@ abstract final class TelegramBubbleGeometry {
   /// From [wideWindowStartDp] the cap is the user's percent of the room
   /// (T39): derived from the window at every layout, so no setting value can
   /// make a bubble wider than the room it is drawn in.
+  /// T150: Telegram puts a single photo, video or GIF in a column WIDER than its
+  /// text column. Measured on a user's phone (411 dp wide, 2.625 px/dp): the GIF's
+  /// media spans x 129..1054 in `the reference capture` = **926 px = 352.8 dp**,
+  /// in a chat that draws no avatar column, while `ChatMessageCell.java:7402` sets their
+  /// text column to `min(parentWidth, displaySize.y) - dp(80 + (drawAvatar ? 42 : 0))`
+  /// = 331 dp in that same chat. Media therefore runs 22 dp wider than text. Their
+  /// portrait GIF measures 924 x 976 px = 352 x 372 dp, so the column caps the WIDTH and
+  /// the height is free to run past it. Their media-bounds code is not citable here:
+  /// `getMediaBounds` is absent from the local `MessageObject.java`, and `MediaView.java`
+  /// and `ChatImageView.java` are in no revision path of the vendored checkout - the 22 dp
+  /// came from pixels.
+  static const double mediaOverTextColumnDp = 22.0;
+
+  /// The column a single media row may fill: this bubble's text column plus
+  /// [mediaOverTextColumnDp]. The album mosaic keeps its own, narrower cap
+  /// (`TelegramAlbumGeometry.gridMaxWidthForWindow`, the measured 256 dp tile).
+  static double singleMediaMaxWidthForWindow(
+    double windowWidth, {
+    required bool outgoing,
+  }) =>
+      maxBubbleWidthForWindow(windowWidth, outgoing: outgoing) +
+      mediaOverTextColumnDp;
+
+  /// T155 - the meta pill Telegram draws INSIDE caption-less media, at its
+  /// bottom-right corner (user, 2026-10-31: "Gifs are supposed to have a
+  /// timestamp on them"). Measured on `the reference capture` at
+  /// 2.628 px/dp: the GIF's media spans to x 1049, y 1373; its time and its two
+  /// ticks span x 847..1015, y 1320..1342 - a 34 px = 12.9 dp inset from the
+  /// media's right edge, a 31 px = 11.8 dp inset from its bottom, and a 23 px =
+  /// 8.8 dp cap height, which is Telegram's 12 dp time text (`Theme.java:8408`
+  /// `chat_timePaint.setTextSize(dp(12))`). The pill SHAPE is their media-badge
+  /// pill: `ChatMessageCell.java:15985-15993` fills a round rect of radius
+  /// dp(4) grown from the text box by dp(4) at the sides and dp(1.5) above /
+  /// dp(14.5) below - a 16 dp box. Their date-over-media draw itself is absent
+  /// from the vendored checkout, so the two insets are the measured ones.
+  static const double mediaMetaEndInset = 8;
+  static const double mediaMetaBottomInset = 6;
+  static const double mediaMetaPillHeight = 16;
+  static const double mediaMetaPillRadius = 4;
+  static const double mediaMetaPillPaddingH = 4;
+
+  /// The scrim under the meta of caption-less media. Telegram's own value is not
+  /// citable - `chat_mediaTimeBackground` carries no entry in the vendored
+  /// `night.attheme` - and the capture cannot show it: the media under the pill
+  /// samples luma 8..19 both inside and outside the pill. This 40 % black is a
+  /// chosen value, not a measurement, and the phone pass judges it.
+  static const Color mediaMetaPillColor = Color(0x66000000);
+
   static double maxBubbleWidthForWindow(
     double windowWidth, {
     required bool outgoing,
@@ -246,6 +294,19 @@ abstract final class TelegramBubbleGeometry {
   /// 16sp body (14.9sp) and its cap height alone reads 14.3sp. The shipped 14
   /// sits inside that bracket, so no new value was invented.
   static const double senderNameFontSize = 14;
+
+  /// Message body line pitch, as a multiple of the font size. Telegram draws
+  /// message text with `setLineSpacing(0f, 1f)` (`ui/Components/Text.java`,
+  /// `ui/CachedStaticLayout.java`), so its pitch is the font's own metrics and
+  /// nothing is added on top. Measured on a user's 2026-10-31 pair at 2.625
+  /// px/dp: Telegram `the reference capture` inks a 49 px pitch
+  /// (18.67 dp at the 16 dp body = 1.167 em); ours was 60.5 px (23.05 dp,
+  /// 1.44 em) because the body style sets only size and colour and inherits
+  /// Material 3 `bodyLarge` `height: 1.43`
+  /// (`material_ui-1.8.0/lib/src/generated/typography_defaults_m3.g.dart:98`).
+  /// 1.1714 is Roboto's own leading (ascent 0.9277 + descent 0.2441) and lands
+  /// on Telegram's 49 px at 16 dp.
+  static const double messageLineHeight = 1.1714;
 
   /// The gap under a group sender name, inside the bubble.
   ///

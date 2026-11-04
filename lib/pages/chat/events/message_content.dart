@@ -61,6 +61,12 @@ class MessageContent extends StatelessWidget {
   /// Long-press on one tile of that album: selection of the tile's own event.
   final void Function(Event)? onAlbumTileLongPress;
 
+  /// T155: the row's timestamp and tick glyphs, drawn INSIDE caption-less media
+  /// at its bottom-right corner the way Telegram does it (`mediaMeta`
+  /// geometry in `bubble_shape.dart`). Null when the row keeps its meta line
+  /// under the bubble instead.
+  final Widget? mediaMeta;
+
   const MessageContent(
     this.event, {
     this.onInfoTab,
@@ -75,6 +81,7 @@ class MessageContent extends StatelessWidget {
     this.inlineMetaReserve,
     this.albumRun,
     this.onAlbumTileLongPress,
+    this.mediaMeta,
   });
 
   @override
@@ -102,10 +109,17 @@ class MessageContent extends StatelessWidget {
           case MessageTypes.Image:
           case MessageTypes.Sticker:
             if (event.redacted) continue textmessage;
+            // T150: a SINGLE photo, video or GIF fills Telegram's media column,
+            // not the album tile. This line used `gridMaxWidthForWindow`, whose
+            // phone value is the measured 256 dp mosaic tile, and that is why a
+            // GIF bubble came out 671 px = 255.6 dp against Telegram's 926 px =
+            // 352.8 dp (the reference capture). The mosaic keeps the
+            // tile cap in `album_grid.dart`; only a lone media row grows.
             final maxSize = event.messageType == MessageTypes.Sticker
                 ? 128.0
-                : TelegramAlbumGeometry.gridMaxWidthForWindow(
+                : TelegramBubbleGeometry.singleMediaMaxWidthForWindow(
                     MediaQuery.sizeOf(context).width,
+                    outgoing: event.senderId == event.room.client.userID,
                   );
             final w = event.content
                 .tryGetMap<String, Object?>('info')
@@ -180,11 +194,28 @@ class MessageContent extends StatelessWidget {
                     ),
                   ),
             );
+            // T155: a GIF carries its time inside the media, at the bottom-
+            // right corner, over a dark pill - a user, 2026-10-31: "Gifs are
+            // supposed to have a timestamp on them". The pill sits on the media
+            // itself, so it goes in a Stack over `media` and NOT in the inset
+            // strip that `telegramMediaInset` adds around it.
+            final mediaWithMeta = mediaMeta == null
+                ? media
+                : Stack(
+                    children: [
+                      media,
+                      PositionedDirectional(
+                        bottom: TelegramBubbleGeometry.mediaMetaBottomInset,
+                        end: TelegramBubbleGeometry.mediaMetaEndInset,
+                        child: mediaMeta!,
+                      ),
+                    ],
+                  );
             // A sticker row keeps Telegram's box-less surface: no container, so
             // no inset strip around it.
             return event.messageType == MessageTypes.Sticker
-                ? media
-                : telegramMediaInset(media);
+                ? mediaWithMeta
+                : telegramMediaInset(mediaWithMeta);
           case CuteEventContent.eventType:
             return CuteContent(event);
           case MessageTypes.Audio:

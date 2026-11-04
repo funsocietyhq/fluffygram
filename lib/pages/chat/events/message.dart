@@ -22,6 +22,7 @@ import 'package:fluffychat/utils/date_time_extension.dart';
 import 'package:fluffychat/utils/file_description.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/string_color.dart';
+import 'package:fluffychat/utils/telegram_gif.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/member_actions_popup_menu_button.dart';
@@ -224,6 +225,21 @@ class Message extends StatelessWidget {
     // box-less surface: Telegram floats a sticker without a bubble.
     final mediaContainer =
         noBubble && event.messageType != MessageTypes.Sticker;
+
+    // T155 (user, 2026-10-31: "Gifs are supposed to have a timestamp on
+    // them"): Telegram draws the meta of CAPTION-LESS media INSIDE the media, at
+    // its bottom-right corner over a dark pill - a user's capture
+    // `the reference capture` shows `3:41 PM` and the two ticks inside
+    // the GIF. Our media rows print that line UNDER the bubble, so a GIF read as
+    // having no time at all. A GIF row takes the overlay here; photo and video
+    // rows keep the line below until a user gates that wider change. A media
+    // row with a caption keeps the caption's own meta line, as Telegram does.
+    final mediaMetaInline =
+        mediaContainer &&
+        event.status.isSent &&
+        event.content['formatted_caption'] == null &&
+        event.content['caption'] == null &&
+        (telegramEventIsGif(event) || telegramEventIsMp4Gif(event));
 
     // Telegram draws the tail on the last (newest) message of a run by one
     // sender: `previousEvent` is the newer neighbour in the reversed timeline.
@@ -764,12 +780,20 @@ class Message extends StatelessWidget {
                                         clipBehavior: Clip.antiAlias,
                                         child: BubbleBackground(
                                           colors: colors,
-                                          ignore:
-                                              noBubble ||
-                                              !ownMessage ||
-                                              MediaQuery.highContrastOf(
-                                                context,
-                                              ),
+                                          // T151: off. Telegram paints an own bubble with ONE flat
+                                          // fill - a user's own outgoing bubble in
+                                          // the reference capture samples srgb(78,85,107),
+                                          // which is `TelegramPalette.bubbleOutgoing` #4F556C. This
+                                          // layer paints a list-wide vertical gradient from
+                                          // `secondaryBubbleColor` (#1E1E20) to `bubbleColor` over
+                                          // own bubbles, so an own TEXT bubble sampled srgb(58,59,76)
+                                          // while an own MEDIA bubble - which skips it through
+                                          // `noBubble` - showed the flat srgb(79,82,108). Owner,
+                                          // 2026-10-31: "why are some replies different colored than
+                                          // others? the lighter one looks bad". The lighter one is
+                                          // Telegram's colour; the darker ones are this gradient. So
+                                          // every own bubble now takes `theme.bubbleColor`.
+                                          ignore: true,
                                           scrollController: scrollController,
                                           child: Container(
                                             decoration: BoxDecoration(
@@ -781,18 +805,27 @@ class Message extends StatelessWidget {
                                             constraints: BoxConstraints(
                                               // Cap: the user's bubble width
                                               // setting (280dp default), clamped to
-                                              // the window, incl. the tail.
+                                              // the window, incl. the tail. A media
+                                              // row takes Telegram's wider media
+                                              // column - T150, `mediaOverTextColumnDp`.
                                               maxWidth:
-                                                  TelegramBubbleGeometry.maxBubbleWidthForWindow(
-                                                    MediaQuery.sizeOf(
-                                                      context,
-                                                    ).width,
-                                                    // Telegram's column formula
-                                                    // charges the incoming row
-                                                    // dp(52) for its avatar
-                                                    // (MessageObject.java:8531).
-                                                    outgoing: ownMessage,
-                                                  ) -
+                                                  (mediaContainer
+                                                      ? TelegramBubbleGeometry.singleMediaMaxWidthForWindow(
+                                                          MediaQuery.sizeOf(
+                                                            context,
+                                                          ).width,
+                                                          outgoing: ownMessage,
+                                                        )
+                                                      : TelegramBubbleGeometry.maxBubbleWidthForWindow(
+                                                          MediaQuery.sizeOf(
+                                                            context,
+                                                          ).width,
+                                                          // Telegram's column formula
+                                                          // charges the incoming row
+                                                          // dp(52) for its avatar
+                                                          // (MessageObject.java:8531).
+                                                          outgoing: ownMessage,
+                                                        )) -
                                                   tailInset,
                                             ),
                                             child: Column(
@@ -985,6 +1018,18 @@ class Message extends StatelessWidget {
                                                   inlineMeta: bubbleMeta,
                                                   inlineMetaReserve:
                                                       bubbleMetaReserve,
+                                                  mediaMeta: mediaMetaInline
+                                                      ? _MediaMetaPill(
+                                                          event: event,
+                                                          ownMessage:
+                                                              ownMessage,
+                                                          detailedTime:
+                                                              selected,
+                                                          isEdited: isEdited,
+                                                          shadows:
+                                                              wallpaperTextShadow,
+                                                        )
+                                                      : null,
                                                 ),
                                               ],
                                             ),
@@ -998,8 +1043,14 @@ class Message extends StatelessWidget {
                                   // bubble box bottom above the meta line.
                                   if (bubbleMeta == null)
                                     SizedBox(
+                                      // T155: a GIF that carries its meta inside
+                                      // the media keeps the fixed-height box - it
+                                      // anchors the avatar's bottom edge (T30) -
+                                      // but leaves it empty.
                                       height: mediaMetaBoxHeight,
-                                      child: belowBubbleMeta,
+                                      child: mediaMetaInline
+                                          ? null
+                                          : belowBubbleMeta,
                                     )
                                   else
                                     belowBubbleMeta,
@@ -1301,6 +1352,54 @@ class _TelegramHighlightFade extends Curve {
 
   @override
   double transform(double t) => t <= 0.7 ? 0.0 : (t - 0.7) / 0.3;
+}
+
+/// The dark pill behind the meta of caption-less media, and that meta inks in
+/// Telegram's white over it (T155). The geometry constants and where each one
+/// comes from sit with `mediaMetaEndInset` in `bubble_shape.dart`.
+class _MediaMetaPill extends StatelessWidget {
+  const _MediaMetaPill({
+    required this.event,
+    required this.ownMessage,
+    required this.detailedTime,
+    required this.isEdited,
+    required this.shadows,
+  });
+
+  final Event event;
+  final bool ownMessage;
+  final bool detailedTime;
+  final bool isEdited;
+  final List<Shadow>? shadows;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: TelegramBubbleGeometry.mediaMetaPillColor,
+      borderRadius: BorderRadius.circular(
+        TelegramBubbleGeometry.mediaMetaPillRadius,
+      ),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: TelegramBubbleGeometry.mediaMetaPillPaddingH,
+      ),
+      child: SizedBox(
+        height: TelegramBubbleGeometry.mediaMetaPillHeight,
+        child: _BubbleMeta(
+          event: event,
+          ownMessage: ownMessage,
+          showTime: event.status.isSent,
+          detailedTime: detailedTime,
+          isEdited: isEdited,
+          // Telegram inks this meta white - measured srgb(255,255,255) on
+          // `the reference capture` - not the bubble timestamp grey.
+          ink: Colors.white,
+          shadows: shadows,
+        ),
+      ),
+    ),
+  );
 }
 
 class _BubbleMeta extends StatelessWidget {

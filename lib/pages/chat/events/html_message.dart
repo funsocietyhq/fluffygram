@@ -612,7 +612,14 @@ class HtmlMessage extends StatelessWidget {
     final configuredMaxLines = AppSettings.messagePreviewMaxLines.value;
     final maxLines = configuredMaxLines <= 0 ? null : configuredMaxLines;
     final span = _renderHtml(element, context);
-    final style = TextStyle(fontSize: fontSize, color: textColor);
+    // T149: the pitch is pinned, not inherited. With only a size and a colour
+    // here, the style merges with the theme's `bodyLarge` and its Material 3
+    // `height: 1.43`, which put 60.5 px between our lines where Telegram puts 49.
+    final style = TextStyle(
+      fontSize: fontSize,
+      color: textColor,
+      height: TelegramBubbleGeometry.messageLineHeight,
+    );
 
     // Telegram puts the timestamp and the tick glyphs **inside** the bubble,
     // on the last line of the text. Appending them as an inline widget span

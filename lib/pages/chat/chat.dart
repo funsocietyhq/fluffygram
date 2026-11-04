@@ -40,6 +40,7 @@ import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/telegram_gif.dart';
 import 'package:fluffychat/utils/telegram_gif_file.dart';
+import 'package:fluffychat/utils/telegram_plain_text.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
@@ -364,7 +365,9 @@ class ChatController extends State<ChatPageWithRoom>
     if (!mounted || !proceed) return;
     for (final item in shareItems) {
       if (item is FileShareItem) continue;
-      if (item is TextShareItem) room.sendTextEvent(item.value);
+      if (item is TextShareItem) {
+        room.sendTextEvent(telegramKeepGtLiteral(item.value));
+      }
       if (item is ContentShareItem) room.sendEvent(item.value.copy());
     }
     final files = shareItems
@@ -834,8 +837,12 @@ class ChatController extends State<ChatPageWithRoom>
     }
 
     // ignore: unawaited_futures
+    // T152: Telegram has no blockquote rule, so a line that starts with `>`
+    // must stay text. matrix-dart runs the body through package `markdown`,
+    // which turns a leading `>` into <blockquote>; the escape keeps `>` literal
+    // and leaves bold, italic, code, links and mentions working.
     room.sendTextEvent(
-      sendController.text,
+      telegramKeepGtLiteral(sendController.text),
       inReplyTo: replyEvent,
       editEventId: editEvent?.eventId,
       parseCommands: parseCommands,
