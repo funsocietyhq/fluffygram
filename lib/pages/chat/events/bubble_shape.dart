@@ -37,6 +37,12 @@ abstract final class TelegramBubbleGeometry {
   /// is deliberately much tighter than the other three.
   static const double tailSideCornerRadius = 3;
 
+  /// Telegram's `minRad = dp(4)` (`ChatMessageCell.java:11013`): the radius of a
+  /// media corner that sits under a caption, or that a group joins at
+  /// (`:11023-11046`). The fork's text tail is the tighter `tailSideCornerRadius`
+  /// (3 dp = their `nearRad`, `:11015`); a media corner under a caption is 4.
+  static const double mediaCaptionCornerRadius = 4;
+
   /// A corner shared with a neighbour instead of facing open space. Telegram's
   /// `minRad` (`ChatMessageCell.java:9620`, applied by the group-position block
   /// at `:9648-9673`) is 4 dp: inside a sender run the corners that face the
@@ -513,6 +519,32 @@ class TelegramBubbleShape extends ShapeBorder {
     path.addPath(wedge, Offset.zero);
     return path;
   }
+
+  /// T167 (user, 2026-11-05: "bottom right corner should have border radius for
+  /// media chat bubbles"): the corner Telegram gives a MEDIA rect, from its own
+  /// per-corner array - `ChatMessageCell.java:11001-11028` sets
+  /// `tl = tr = bl = br = rad` with `rad = dp(SharedConfig.bubbleRadius - 2)` =
+  /// 15 dp, the tail-side corner included: their tail is a separate drawable
+  /// painted OUTSIDE the media rect, so the picture keeps a round corner where a
+  /// text bubble has its tail. Only the corner under a caption drops, to
+  /// `minRad = dp(4)` (`:11023-11027`), and a run joins its tiles at `minRad`
+  /// (`:11033-11046`, already the album grid's rule). A lone caption-less media
+  /// bubble is therefore round on all four corners.
+  static BorderRadius mediaBorderRadius({required bool captionBelow}) =>
+      captionBelow
+          ? const BorderRadius.only(
+              topLeft: Radius.circular(TelegramBubbleGeometry.cornerRadius),
+              topRight: Radius.circular(TelegramBubbleGeometry.cornerRadius),
+              bottomLeft: Radius.circular(
+                TelegramBubbleGeometry.mediaCaptionCornerRadius,
+              ),
+              bottomRight: Radius.circular(
+                TelegramBubbleGeometry.mediaCaptionCornerRadius,
+              ),
+            )
+          : const BorderRadius.all(
+              Radius.circular(TelegramBubbleGeometry.cornerRadius),
+            );
 
   /// The corner set of the outline, for the widgets that clip with a
   /// `BorderRadius` (`MessageContent`, `ImageBubble`).

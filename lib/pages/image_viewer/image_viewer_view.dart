@@ -41,6 +41,15 @@ final Uint8List pendingMediaBytes = base64Decode(
 /// Telegram rule 9: how many lines of caption fit under the media.
 const int viewerCaptionMaxLines = 3;
 
+/// T168: the height of the header band that carries the `n of total` counter as
+/// the header's third line. Telegram's counter ink sits 30 dp below the header
+/// block (`the reference capture`: the block ends at dp 108, the ink at
+/// dp 137.9). The title block (20 sp name + 2 dp + 14 sp date = 41.8 dp) is
+/// centred in the 64 dp toolbar and leaves ~11 dp beneath it, so a 50 dp band
+/// with the 16 sp ink (cap height 11.4 dp) centred in it puts that ink
+/// (50 - 11.4) / 2 + 11 = 30.3 dp below the title - Telegram's gap.
+const double viewerCounterBandHeight = 50;
+
 /// Key of the widget that translates the media during a drag-out. The fidelity
 /// gate reads its matrix to see which axis a drag took
 /// (`test/telegram_fidelity/media_viewer_test.dart`, `viewerSlideOffset`).
@@ -329,6 +338,40 @@ class _ImageViewerViewState extends State<ImageViewerView>
           elevation: 0,
           scrolledUnderElevation: 0,
           toolbarHeight: chromeVisible ? 64.0 : 0.0,
+          // T168  it
+          // shows for instance 9 of 13 at the same line as the date, which looks
+          // bad. it's below and centered on telegram"): the counter is the
+          // header's third line, laid out by the bar itself, so it can never land
+          // on the name or the date. T104 put it in the body `Stack` with an inset
+          // derived padding, and that padding is a fixed offset from the window
+          // top: on a user's phone it rose onto the header text.
+          // `the reference capture` (2.625 px/dp) measures `3 of 4` at
+          // y 223..247 px = 85..94 dp - the same rows as the chat name at y
+          // 223..249 - while the date ink sits at y 286..303 = 109..115.5 dp.
+          // In the bar it is also centred on the window, as Telegram's is.
+          bottom: chromeVisible && controller.allEvents.length > 1
+              ? PreferredSize(
+                  preferredSize: const Size.fromHeight(
+                    viewerCounterBandHeight,
+                  ),
+                  child: Center(
+                    // Telegram writes `"%1$d of %2$d"`, not a slash (T104), in
+                    // white glyphs of cap height 10.7 dp (a 16 sp face). The
+                    // 150 ms chrome ramp of `PhotoViewCell.java:59-64` is the
+                    // `EntranceFade`.
+                    child: EntranceFade(
+                      child: Text(
+                        '${controller.currentIndex + 1} of '
+                        '${controller.allEvents.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : null,
           backgroundColor: Colors.transparent,
           systemOverlayStyle: SystemUiOverlayStyle.light,
           // Telegram's gallery arrow returns to the chat; it is not a close
@@ -465,41 +508,10 @@ class _ImageViewerViewState extends State<ImageViewerView>
                   ),
                 ),
               ),
-              if (chromeVisible && controller.allEvents.length > 1)
-                // Telegram's "n / total" counter of the opened media. It ramps in
-                // on the chrome ramp, 150 ms, started at the same moment as the
-                // media ramp and not after it: PhotoViewCell.java:59-63 calls
-                // setTextInAnimation.animateIn() and setViewsAnimation
-                // (alpha 0 -> 1, 150 ms) unconditionally in animateIn(), next to
-                // the cell's own alpha -> 1 at 220 ms (`:64`).
-                EntranceFade(
-                  child: Align(
-                    alignment: Alignment.topCenter,
-                    child: Padding(
-                      // T104. The counter sits BELOW the header row, not under the
-                      // status bar: in a user's capture its ink starts at y 362 px
-                      // = dp 137.9, and the header's own block ends at dp 108
-                      // (`the reference capture`, 1 dp = 2.625 px). The AppBar
-                      // is kToolbarHeight (56 dp) over the status inset, so the gap is
-                      // the inset plus 41 dp.
-                      padding: EdgeInsets.only(
-                        top: MediaQuery.viewPaddingOf(context).top + 97.0,
-                      ),
-                      child: Text(
-                        // T104. Telegram writes `"%1$d of %2$d"`, not a slash - the
-                        // a user's capture reads "47330 of 47341" - in white glyphs of
-                        // cap height 10.7 dp (a 16 sp face), centred at dp 204.4 of the
-                        // 411 dp width.
-                        '${controller.currentIndex + 1} of '
-                        '${controller.allEvents.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              // T168 moved the `n of total` counter out of this Stack: it is the
+              // header's third line now, on the `AppBar.bottom` band, where the
+              // bar's own layout puts it below the name and the date on every
+              // window and every status inset.
               if (chromeVisible && hovered) ...[
                 if (controller.canGoBack)
                   Align(

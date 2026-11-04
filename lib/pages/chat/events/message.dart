@@ -225,6 +225,19 @@ class Message extends StatelessWidget {
     final mediaContainer =
         noBubble && event.messageType != MessageTypes.Sticker;
 
+    // T167 (user, 2026-11-05: "bottom right corner should have border radius for
+    // media chat bubbles"): a media row clips with Telegram's MEDIA corner set
+    // (`ChatMessageCell.java:11001-11028`), not with the text bubble's tail set:
+    // all four corners at 15 dp, and only the two under a caption at their
+    // `minRad` 4 dp. The tail stays in the bubble path behind the media, as
+    // Telegram's tail drawable sits outside their media rect.
+    final mediaHasCaption =
+        event.content['formatted_caption'] != null ||
+        event.content['caption'] != null;
+    final contentBorderRadius = mediaContainer
+        ? TelegramBubbleShape.mediaBorderRadius(captionBelow: mediaHasCaption)
+        : borderRadius;
+
     // Telegram draws the tail on the last (newest) message of a run by one
     // sender: `previousEvent` is the newer neighbour in the reversed timeline.
     final showTail = !noBubble && !previousEventSameSender;
@@ -1061,7 +1074,8 @@ class Message extends StatelessWidget {
                                                   onAlbumTileLongPress:
                                                       onSelect,
                                                   onInfoTab: onInfoTab,
-                                                  borderRadius: borderRadius,
+                                                  borderRadius:
+                                                      contentBorderRadius,
                                                   timeline: timeline,
                                                   selected: selected,
                                                   bigEmojis: bigEmojis,
