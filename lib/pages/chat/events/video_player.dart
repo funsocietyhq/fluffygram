@@ -15,6 +15,8 @@ import 'dart:math';
 
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/telegram_palette.dart';
+import 'package:fluffychat/pages/chat/events/bubble_shape.dart';
 import 'package:fluffychat/utils/attachments/telegram_media_cache.dart';
 import 'package:fluffychat/utils/file_description.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/event_extension.dart';
@@ -112,7 +114,17 @@ class EventVideoPlayer extends StatelessWidget {
           clipBehavior: Clip.hardEdge,
           shape: RoundedRectangleBorder(
             borderRadius: mediaRadius,
-            side: BorderSide(color: theme.dividerColor),
+            // T165: the same measured media outline as `ImageBubble` -
+            // `TelegramPalette.mediaBubbleBorder` `#4c5268` at 1.5 dp in the
+            // night theme, `the reference capture` at 2.75 px/dp.
+            // Upstream's `dividerColor` here was the value T162 removed from the
+            // photo row; the two rows must carry one outline, not two inks.
+            side: BorderSide(
+              color: theme.brightness == Brightness.dark
+                  ? TelegramPalette.mediaBubbleBorder
+                  : theme.dividerColor,
+              width: TelegramBubbleGeometry.mediaBorderWidth,
+            ),
           ),
           child: InkWell(
             onTap: () => supportsVideoPlayer

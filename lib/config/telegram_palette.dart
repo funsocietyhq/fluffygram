@@ -31,6 +31,15 @@ abstract class TelegramPalette {
   /// timeline paints the derived colour, not this one.
   static const Color bubbleOutgoing = Color(0xFF4F556C);
 
+  /// The outline Telegram paints on a MEDIA bubble. Measured on
+  /// `the reference capture` at 2.75 px/dp: across the GIF's left edge
+  /// black runs to x 128, `#4c5268` sits at x 129..132 and the media starts at
+  /// x 133; across the right edge the media runs to x 1044, `#4c5268` sits at
+  /// x 1045..1049 and black starts at x 1050. The line is 4-5 px = **1.5 dp**
+  /// wide, and its colour is within anti-aliasing of [bubbleOutgoing].
+  /// Night-theme value: the day theme keeps the theme's own divider.
+  static const Color mediaBubbleBorder = Color(0xFF4C5268);
+
   /// top_bar_bg, composer_pill_bg, input_field_bg, message_action_sheet_bg.
   static const Color surfaceRaised = Color(0xFF17191C);
 

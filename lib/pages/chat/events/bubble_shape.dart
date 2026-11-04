@@ -219,6 +219,13 @@ abstract final class TelegramBubbleGeometry {
   static const double mediaMetaPillRadius = 4;
   static const double mediaMetaPillPaddingH = 4;
 
+  /// The stroke Telegram paints on a media bubble: 4 px at the left edge and
+  /// 5 px at the right of `the reference capture` at 2.75 px/dp =
+  /// **1.5 dp**, in `TelegramPalette.mediaBubbleBorder`. The fork paints it on
+  /// the media's own `Material` (which since T163 sits on the bubble edge), so
+  /// the media keeps one outline and no second line appears inside it.
+  static const double mediaBorderWidth = 1.5;
+
   /// The scrim under the meta of caption-less media. Telegram's own value is not
   /// citable - `chat_mediaTimeBackground` carries no entry in the vendored
   /// `night.attheme` - and the capture cannot show it: the media under the pill

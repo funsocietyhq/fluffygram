@@ -5,6 +5,8 @@
 
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/telegram_palette.dart';
+import 'package:fluffychat/pages/chat/events/bubble_shape.dart';
 import 'package:fluffychat/utils/file_description.dart';
 import 'package:fluffychat/utils/media_viewer_hero.dart';
 import 'package:fluffychat/utils/url_launcher.dart';
@@ -66,22 +68,29 @@ class ImageBubble extends StatelessWidget {
       mainAxisSize: .min,
       spacing: 8,
       children: [
-        // T162 - no stroke on media (user, 2026-11-05: "gifs in chat seem to
-        // have a double border on top and bottom (left and right seem okay)").
-        // Upstream drew a 1 dp `dividerColor` outline here. Telegram draws no
-        // outline on media: measured on `the reference capture` at
-        // x 1040 the GIF's top edge runs 84 -> 70 -> 24 -> 0 in 2 px - plain
-        // anti-aliasing, no light line - and `ChatMessageCell` has no stroke
-        // call for a media rect. Upstream's outline is also what made the
-        // asymmetry a user saw: with a caption the media box sits inside the
-        // bubble, so its outline reads as a second line at the top and bottom
-        // edges, while left and right sit flush on the bubble's own edge.
+        // T165 (user, 2026-11-05: "now gifs and images have no chat bubble
+        // border? that's wrong too") puts the outline back and narrows T162.
+        // Telegram DOES outline a media bubble: measured on
+        // `the reference capture` at 2.75 px/dp, the GIF's left edge
+        // runs black to x 128, `#4c5268` at x 129..132, media from x 133; the
+        // right edge runs media to x 1044, `#4c5268` at x 1045..1049, black from
+        // x 1050 - a 4-5 px = 1.5 dp line. T162's "no stroke" reading came from
+        // a luminance probe across the TOP edge, which sees only the
+        // anti-aliasing ramp of a dark picture. What T162 correctly killed was
+        // the DOUBLE line: upstream stroked the media box while the bubble box
+        // was larger. Since T163 the two boxes are one, so this stroke is the
+        // bubble's only outline.
         Material(
           color: Colors.transparent,
           clipBehavior: Clip.hardEdge,
           shape: RoundedRectangleBorder(
             borderRadius: borderRadius,
-            side: BorderSide.none,
+            side: BorderSide(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? TelegramPalette.mediaBubbleBorder
+                  : Theme.of(context).dividerColor,
+              width: TelegramBubbleGeometry.mediaBorderWidth,
+            ),
           ),
           child: InkWell(
             onTap: onTap,

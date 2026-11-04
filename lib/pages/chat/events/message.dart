@@ -22,7 +22,6 @@ import 'package:fluffychat/utils/date_time_extension.dart';
 import 'package:fluffychat/utils/file_description.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/string_color.dart';
-import 'package:fluffychat/utils/telegram_gif.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/member_actions_popup_menu_button.dart';
@@ -226,21 +225,6 @@ class Message extends StatelessWidget {
     final mediaContainer =
         noBubble && event.messageType != MessageTypes.Sticker;
 
-    // T155 (user, 2026-10-31: "Gifs are supposed to have a timestamp on
-    // them"): Telegram draws the meta of CAPTION-LESS media INSIDE the media, at
-    // its bottom-right corner over a dark pill - a user's capture
-    // `the reference capture` shows `3:41 PM` and the two ticks inside
-    // the GIF. Our media rows print that line UNDER the bubble, so a GIF read as
-    // having no time at all. A GIF row takes the overlay here; photo and video
-    // rows keep the line below until a user gates that wider change. A media
-    // row with a caption keeps the caption's own meta line, as Telegram does.
-    final mediaMetaInline =
-        mediaContainer &&
-        event.status.isSent &&
-        event.content['formatted_caption'] == null &&
-        event.content['caption'] == null &&
-        (telegramEventIsGif(event) || telegramEventIsMp4Gif(event));
-
     // Telegram draws the tail on the last (newest) message of a run by one
     // sender: `previousEvent` is the newer neighbour in the reversed timeline.
     final showTail = !noBubble && !previousEventSameSender;
@@ -262,6 +246,29 @@ class Message extends StatelessWidget {
         anchoredRun != null &&
         anchoredRun.length >= TelegramAlbumGeometry.minRunLength &&
         anchoredRun.first.eventId == event.eventId;
+
+    // T155 (user, 2026-10-31: "Gifs are supposed to have a timestamp on
+    // them"): Telegram draws the meta of CAPTION-LESS media INSIDE the media, at
+    // its bottom-right corner over a dark pill - a user's capture
+    // `the reference capture` shows `3:41 PM` and the two ticks inside
+    // the GIF. Our media rows printed that line UNDER the bubble, so a GIF read
+    // as having no time at all. A media row with a caption keeps the caption's
+    // own meta line, as Telegram does.
+    // T164 (user, 2026-11-05: "images should have timestamps in the chat bubble
+    // same as gifs - all media bubbles should"): the overlay is the rule for
+    // EVERY caption-less media row, not the GIF case alone. Declared here, below
+    // `anchorsAlbumContainer`, which it reads. An album anchor is excluded: its
+    // run draws the mosaic through the album branch of `message_content.dart`,
+    // which paints no pill, and the box under the container keeps the run's one
+    // meta line - Telegram shows one time per container, not one per tile. A
+    // sticker is not a `mediaContainer` at all: Telegram floats a sticker with no
+    // bubble and prints its time below.
+    final mediaMetaInline =
+        mediaContainer &&
+        !anchorsAlbumContainer &&
+        event.status.isSent &&
+        event.content['formatted_caption'] == null &&
+        event.content['caption'] == null;
 
     // T157 (user, 2026-11-04, on `the reference capture` against
     // Telegram's `the reference capture`: "it shouldn't expand the width

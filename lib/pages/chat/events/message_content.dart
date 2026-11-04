@@ -218,18 +218,10 @@ class MessageContent extends StatelessWidget {
             // supposed to have a timestamp on them". The pill sits on the media
             // itself, so it goes in a Stack over `media` and NOT in the inset
             // strip that `telegramMediaInset` adds around it.
-            final mediaWithMeta = mediaMeta == null
-                ? media
-                : Stack(
-                    children: [
-                      media,
-                      PositionedDirectional(
-                        bottom: TelegramBubbleGeometry.mediaMetaBottomInset,
-                        end: TelegramBubbleGeometry.mediaMetaEndInset,
-                        child: mediaMeta!,
-                      ),
-                    ],
-                  );
+            final mediaWithMeta = _mediaWithMeta(
+              media: media,
+              mediaMeta: mediaMeta,
+            );
             // A sticker row keeps Telegram's box-less surface: no container, so
             // no inset strip around it.
             // T163: a LONE photo, video or GIF is flush with its bubble on all
@@ -261,15 +253,21 @@ class MessageContent extends StatelessWidget {
             );
           case MessageTypes.Video:
             // T163: flush, as for the image row above.
-            return EventVideoPlayer(
-              event,
-              textColor: textColor,
-              linkColor: linkColor,
-              timeline: timeline,
-              // T135: the media carries the bubble's corners, like ImageBubble
-              // above - a uniform AppConfig.borderRadius left a round corner
-              // where the bubble outline is tight.
-              borderRadius: borderRadius,
+            // T164: a video carries its time inside the media too, at the
+            // bottom-right. Its duration badge sits at the bottom-LEFT
+            // (`video_player.dart:175`), so the two never share a corner.
+            return _mediaWithMeta(
+              media: EventVideoPlayer(
+                event,
+                textColor: textColor,
+                linkColor: linkColor,
+                timeline: timeline,
+                // T135: the media carries the bubble's corners, like ImageBubble
+                // above - a uniform AppConfig.borderRadius left a round corner
+                // where the bubble outline is tight.
+                borderRadius: borderRadius,
+              ),
+              mediaMeta: mediaMeta,
             );
           case MessageTypes.File:
             return MessageDownloadContent(
@@ -424,11 +422,31 @@ class MessageContent extends StatelessWidget {
   }
 }
 
+/// T155 (GIFs) widened by T164 (user, 2026-11-05: "images should have
+/// timestamps in the chat bubble same as gifs - all media bubbles should"): the
+/// meta pill of caption-less media, laid over the media's bottom-right corner.
+/// Telegram draws the time INSIDE the picture, so the pill is a `Stack` child of
+/// the media and never adds a strip around it. Insets, pill shape and height are
+/// `TelegramBubbleGeometry.mediaMeta*`.
+Widget _mediaWithMeta({required Widget media, required Widget? mediaMeta}) =>
+    mediaMeta == null
+        ? media
+        : Stack(
+            children: [
+              media,
+              PositionedDirectional(
+                bottom: TelegramBubbleGeometry.mediaMetaBottomInset,
+                end: TelegramBubbleGeometry.mediaMetaEndInset,
+                child: mediaMeta,
+              ),
+            ],
+          );
+
 /// The measured strip of container fill between a media container edge and the
 /// media inside it (`TelegramAlbumGeometry.containerInset`, 1.5 dp, measured on
 /// `a measurement crop`: container x 156-921, first photo pixel
-/// column x 160). Used for image and video content only. The tiles, their size
-/// and their gaps are untouched, and a sticker row never passes through here.
+/// column x 160). Used for the album mosaic only: a lone photo, GIF or video is
+/// flush with its bubble since T163.
 Widget telegramMediaInset(Widget child) => Padding(
   padding: const EdgeInsets.all(TelegramAlbumGeometry.containerInset),
   child: child,
