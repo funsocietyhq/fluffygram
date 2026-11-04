@@ -456,7 +456,11 @@ abstract final class TelegramBubbleGeometry {
 /// body at `maxBubbleWidth - tailWidth` so bubble plus tail stays inside the
 /// cap.
 class TelegramBubbleShape extends ShapeBorder {
-  const TelegramBubbleShape({this.tail = false, this.tailOnLeft = false});
+  const TelegramBubbleShape({
+    this.tail = false,
+    this.tailOnLeft = false,
+    this.tailCornerRadius = TelegramBubbleGeometry.tailSideCornerRadius,
+  });
 
   /// Draw the tail: true on the last (newest) message of a run by one sender.
   final bool tail;
@@ -464,19 +468,30 @@ class TelegramBubbleShape extends ShapeBorder {
   /// Incoming bubbles point left, outgoing bubbles point right.
   final bool tailOnLeft;
 
+  /// T169 (user, 2026-11-05: "The actual bubble should have border radius in
+  /// bottom right corner for media bubbles, not just the media."): the radius of
+  /// the bubble's own tail-side corner. A text bubble keeps the tight
+  /// `tailSideCornerRadius` = 3 dp (their `nearRad`, `ChatMessageCell.java:11015`);
+  /// a media row passes 15 dp, because the per-corner array that rounds their
+  /// media rect (`:11001-11028`, `rad = dp(SharedConfig.bubbleRadius - 2)`) is the
+  /// same array their bubble background is built from - one `tl, tr, br, bl` set
+  /// drives both the fill and the picture. A media container is therefore a
+  /// rounded rect on all four corners, with the 4 dp `minRad` only where a caption
+  /// sits under it.
+  final double tailCornerRadius;
+
   /// The bubble outline for [rect]: the body rounded rect plus the tail wedge.
   static Path buildPath({
     required Rect rect,
     required bool tail,
     required bool tailOnLeft,
+    double tailCornerRadius = TelegramBubbleGeometry.tailSideCornerRadius,
   }) {
     // The body fills the box; the tail wedge reaches `tailWidth` beyond its
     // outer edge, so callers cap the body at `maxBubbleWidth - tailWidth`.
     final body = rect;
     const corner = Radius.circular(TelegramBubbleGeometry.cornerRadius);
-    const tailCorner = Radius.circular(
-      TelegramBubbleGeometry.tailSideCornerRadius,
-    );
+    final tailCorner = Radius.circular(tailCornerRadius);
     final path = Path()
       ..addRRect(
         RRect.fromRectAndCorners(
@@ -562,7 +577,12 @@ class TelegramBubbleShape extends ShapeBorder {
   }
 
   Path _outline(Rect rect, TextDirection? textDirection) =>
-      buildPath(rect: rect, tail: tail, tailOnLeft: tailOnLeft);
+      buildPath(
+        rect: rect,
+        tail: tail,
+        tailOnLeft: tailOnLeft,
+        tailCornerRadius: tailCornerRadius,
+      );
 
   @override
   EdgeInsetsGeometry get dimensions => EdgeInsets.zero;

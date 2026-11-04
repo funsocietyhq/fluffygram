@@ -50,6 +50,19 @@ const int viewerCaptionMaxLines = 3;
 /// (50 - 11.4) / 2 + 11 = 30.3 dp below the title - Telegram's gap.
 const double viewerCounterBandHeight = 50;
 
+/// T170.1: Telegram makes the gallery header text legible over media with a glyph
+/// shadow as well as the band: `PhotoViewer.java:483-485` puts
+/// `setShadowLayer(dpf2(0.66f), 0, 1, applyShadows ? 0x72000000 : 0)` on the title,
+/// the subtitle and the counter - a 0.66 dp blur, 1 dp below, at 44.7 % black
+/// (0x72 = 114 of 255). Flutter's `Shadow` takes the same three values.
+const List<Shadow> viewerGlyphShadows = [
+  Shadow(
+    color: Color(0x72000000),
+    blurRadius: 0.66,
+    offset: Offset(0, 1),
+  ),
+];
+
 /// Key of the widget that translates the media during a drag-out. The fidelity
 /// gate reads its matrix to see which axis a drag took
 /// (`test/telegram_fidelity/media_viewer_test.dart`, `viewerSlideOffset`).
@@ -338,6 +351,55 @@ class _ImageViewerViewState extends State<ImageViewerView>
           elevation: 0,
           scrolledUnderElevation: 0,
           toolbarHeight: chromeVisible ? 64.0 : 0.0,
+          // T170 (user, 2026-11-05: "look at the telegram screenshot in gallery
+          // mode. it has a black background (with opacity) behind the header and
+          // the '9 of 13' pill"): the header band carries a scrim, so the name,
+          // the date and the counter stay legible over a bright photo. The scrim
+          // is the bar's own box - status inset, 64 dp toolbar, counter band - so
+          // the dark stops where the header stops and the media below it is
+          // untouched. T99 made `backgroundColor` transparent for the media's own
+          // top edge; the gradient replaces nothing, it just sits behind the text.
+          //
+          // Measured limit, stated: both gallery captures have black behind the
+          // header, and a translucent black over black lifts nothing, so no alpha
+          // is readable from the pixels. `the reference capture` reads
+          // gray 0 at y 294..358 across x 300..780, the rows the counter sits on;
+          // in `the reference capture` the media box starts at y 137 px =
+          // 52 dp, under the 0..52 dp page band, so nothing bright crosses the
+          // boundary. The 0xB3 (70 %) top stop is Telegram's usual top-scrim
+          // weight, and their viewer code is not in the vendored checkout.
+          // A user's phone is the gate on the weight.
+          flexibleSpace: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                // T170.1, read from their code: `PhotoViewer.drawFancyShadows`
+                // (`:20377-20421`) fills the band with `0xff000000` and masks it
+                // with a DST_IN gradient whose peak alpha is `setAlpha(0xd0)`
+                // (`:20413`) = 208 of 255 = 81.6 %, fading to nothing at
+                // `top = (int)(statusBarHeight * 1.5f) +
+                // ActionBar.getCurrentActionBarHeight()` (`:20385`). Replaces the
+                // 0xB3 weight T170 shipped as a stated guess.
+                colors: [Color(0xD0000000), Color(0x00000000)],
+                // The fade ends at their band height, not at the bar's bottom: the
+                // counter band T168 added sits past it, and Telegram's counter
+                // carries the glyph shadow of `viewerGlyphShadows` there instead of
+                // a black backing.
+                stops: [
+                  0,
+                  (
+                        (MediaQuery.paddingOf(context).top * 1.5 + 64) /
+                        (MediaQuery.paddingOf(context).top +
+                            64 +
+                            viewerCounterBandHeight)
+                      )
+                      .clamp(0.0, 1.0),
+                ],
+              ),
+            ),
+            child: const SizedBox.expand(),
+          ),
           // T168  it
           // shows for instance 9 of 13 at the same line as the date, which looks
           // bad. it's below and centered on telegram"): the counter is the
@@ -366,6 +428,7 @@ class _ImageViewerViewState extends State<ImageViewerView>
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
+                          shadows: viewerGlyphShadows,
                         ),
                       ),
                     ),
@@ -625,10 +688,15 @@ class _ViewerHeader extends StatelessWidget {
     color: Colors.white,
     fontSize: 20,
     fontWeight: FontWeight.w500,
+    shadows: viewerGlyphShadows,
   );
 
   /// 10.3 dp of cap height in the capture -> 14 sp.
-  static const dateStyle = TextStyle(color: Colors.white, fontSize: 14);
+  static const dateStyle = TextStyle(
+    color: Colors.white,
+    fontSize: 14,
+    shadows: viewerGlyphShadows,
+  );
 
   @override
   Widget build(BuildContext context) {

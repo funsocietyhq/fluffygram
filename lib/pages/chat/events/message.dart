@@ -827,6 +827,26 @@ class Message extends StatelessWidget {
                                           shape: TelegramBubbleShape(
                                             tail: showTail,
                                             tailOnLeft: tailOnLeft,
+                                            // T169 (user, 2026-11-05: "The actual
+                                            // bubble should have border radius in
+                                            // bottom right corner for media
+                                            // bubbles, not just the media."): a
+                                            // media container is a rounded rect on
+                                            // all four corners - 15 dp, 4 dp under
+                                            // a caption - matching the media clip,
+                                            // because Telegram drives the fill and
+                                            // the picture from ONE corner array
+                                            // (`ChatMessageCell.java:11001-11028`).
+                                            // A text bubble keeps the tight 3 dp.
+                                            tailCornerRadius: mediaContainer
+                                                ? mediaHasCaption
+                                                      ? TelegramBubbleGeometry
+                                                            .
+                                                            mediaCaptionCornerRadius
+                                                      : TelegramBubbleGeometry
+                                                            .cornerRadius
+                                                : TelegramBubbleGeometry
+                                                      .tailSideCornerRadius,
                                           ),
                                         ),
                                         clipBehavior: Clip.antiAlias,
