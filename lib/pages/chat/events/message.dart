@@ -263,6 +263,38 @@ class Message extends StatelessWidget {
         anchoredRun.length >= TelegramAlbumGeometry.minRunLength &&
         anchoredRun.first.eventId == event.eventId;
 
+    // T157 (user, 2026-11-04, on `the reference capture` against
+    // Telegram's `the reference capture`: "it shouldn't expand the width
+    // of the bubble beyond normal just do the quote can be read"): a media row's
+    // bubble is its MEDIA BOX, and the media column is only the ceiling. Ours
+    // measured x 147..1050 = 904 px = 344 dp around a 408 px = 155 dp portrait
+    // media, because the reply quote panel inside it asked for the whole column;
+    // Telegram puts bubble and media both at 462 px = 176 dp and ellipsizes the
+    // quote there (`https://consid…`). So the container takes the width the media
+    // itself will draw - `message_content.dart` sizes the media with the same
+    // `mediaBoxForCap` maths, so the two cannot drift apart. An album run sizes
+    // its own mosaic, and a row whose event declares no `info.w`/`info.h` keeps
+    // the column ceiling it has always had.
+    final mediaInfo = event.content.tryGetMap<String, Object?>('info');
+    final mediaW = mediaInfo?.tryGet<int>('w');
+    final mediaH = mediaInfo?.tryGet<int>('h');
+    final mediaBoxWidth =
+        mediaContainer &&
+            !anchorsAlbumContainer &&
+            mediaW != null &&
+            mediaH != null &&
+            mediaW > 0 &&
+            mediaH > 0
+        ? TelegramBubbleGeometry.mediaBoxForCap(
+            TelegramBubbleGeometry.singleMediaMaxWidthForWindow(
+              MediaQuery.sizeOf(context).width,
+              outgoing: ownMessage,
+            ),
+            mediaW,
+            mediaH,
+          ).width
+        : null;
+
     // Telegram prints the group sender's name INSIDE the bubble at its top-left
     // and only on the first (oldest) message of a run by one sender: in this
     // reversed timeline `nextEvent` is the older neighbour, so
@@ -807,25 +839,32 @@ class Message extends StatelessWidget {
                                               // setting (280dp default), clamped to
                                               // the window, incl. the tail. A media
                                               // row takes Telegram's wider media
-                                              // column - T150, `mediaOverTextColumnDp`.
+                                              // column - T150, `mediaOverTextColumnDp` -
+                                              // as its ceiling only: T157 narrows that
+                                              // to the media's own box, so a reply
+                                              // quote above a portrait photo reads as
+                                              // far as the media is wide and no wider.
                                               maxWidth:
-                                                  (mediaContainer
-                                                      ? TelegramBubbleGeometry.singleMediaMaxWidthForWindow(
-                                                          MediaQuery.sizeOf(
-                                                            context,
-                                                          ).width,
-                                                          outgoing: ownMessage,
-                                                        )
-                                                      : TelegramBubbleGeometry.maxBubbleWidthForWindow(
-                                                          MediaQuery.sizeOf(
-                                                            context,
-                                                          ).width,
-                                                          // Telegram's column formula
-                                                          // charges the incoming row
-                                                          // dp(52) for its avatar
-                                                          // (MessageObject.java:8531).
-                                                          outgoing: ownMessage,
-                                                        )) -
+                                                  (mediaBoxWidth ??
+                                                      (mediaContainer
+                                                          ? TelegramBubbleGeometry.singleMediaMaxWidthForWindow(
+                                                              MediaQuery.sizeOf(
+                                                                context,
+                                                              ).width,
+                                                              outgoing:
+                                                                  ownMessage,
+                                                            )
+                                                          : TelegramBubbleGeometry.maxBubbleWidthForWindow(
+                                                              MediaQuery.sizeOf(
+                                                                context,
+                                                              ).width,
+                                                              // Telegram's column formula
+                                                              // charges the incoming row
+                                                              // dp(52) for its avatar
+                                                              // (MessageObject.java:8531).
+                                                              outgoing:
+                                                                  ownMessage,
+                                                            ))) -
                                                   tailInset,
                                             ),
                                             child: Column(
@@ -1007,6 +1046,10 @@ class Message extends StatelessWidget {
                                                   displayEvent,
                                                   textColor: textColor,
                                                   linkColor: linkColor,
+                                                  // The link-preview panel tints
+                                                  // itself with the sender over
+                                                  // this fill (T160).
+                                                  bubbleFill: color,
                                                   albumRun: albumRun,
                                                   onAlbumTileLongPress:
                                                       onSelect,

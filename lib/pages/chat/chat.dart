@@ -40,6 +40,7 @@ import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/telegram_gif.dart';
 import 'package:fluffychat/utils/telegram_gif_file.dart';
+import 'package:fluffychat/utils/telegram_link_preview.dart';
 import 'package:fluffychat/utils/telegram_plain_text.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
@@ -453,6 +454,7 @@ class ChatController extends State<ChatPageWithRoom>
 
     scrollController.addListener(_updateScrollController);
     inputFocus.addListener(_inputFocusListener);
+    sendController.addListener(_prefetchLinkPreview);
 
     _loadDraft();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -765,8 +767,10 @@ class ChatController extends State<ChatPageWithRoom>
     timeline = null;
     _jumpHighlightTimer?.cancel();
     _storeInputTimeoutTimer?.cancel();
+    _linkPreviewDebounce?.cancel();
     typingCoolDown?.cancel();
     typingTimeout?.cancel();
+    sendController.removeListener(_prefetchLinkPreview);
     sendController.dispose();
     scrollController.dispose();
     inputFocus.removeListener(_inputFocusListener);
@@ -806,7 +810,46 @@ class ChatController extends State<ChatPageWithRoom>
     Matrix.of(context).setActiveClient(c);
   });
 
+  // T161 - a link preview is fetched while you type, not while you tap.
+  // The fetch of T159 sat inside `send()` ahead of the send, so the composer
+  // text stayed on screen for the 0.6-1.5 s of the round trip and every extra
+  // tap ran the whole path again: N taps, N messages.
+  Timer? _linkPreviewDebounce;
+  String _linkPreviewKey = '';
+  bool _sendInFlight = false;
+
+  /// One send at a time. The trust dialog, a slash-command prompt and a cold
+  /// preview fetch all make this method await, and a queued second tap must
+  /// send nothing - the composer has been cleared for it already.
   Future<void> send() async {
+    if (_sendInFlight) return;
+    _sendInFlight = true;
+    try {
+      await _sendOnce();
+    } finally {
+      _sendInFlight = false;
+    }
+  }
+
+  /// Ask the preview endpoint about the link in the composer 400 ms after the
+  /// typing settles. Telegram fetches a page preview when the link lands, not
+  /// when you press send; by the time the tap happens the answer is here (a
+  /// warm answer costs 54 ms against a cold 632 ms, measured on the route).
+  void _prefetchLinkPreview() {
+    if (AppSettings.linkPreviewUrl.value.isEmpty || editEvent != null) return;
+    final text = sendController.text;
+    final link = telegramFirstLink(text);
+    if (link == null || !telegramPlainLinkMessage(text)) return;
+    final key = link.toString();
+    if (key == _linkPreviewKey) return;
+    _linkPreviewKey = key;
+    _linkPreviewDebounce?.cancel();
+    _linkPreviewDebounce = Timer(const Duration(milliseconds: 400), () {
+      telegramPrefetchLinkPreview(room.client, text);
+    });
+  }
+
+  Future<void> _sendOnce() async {
     final proceed = await showTrustUserInRoomDialog(context, room);
     if (!mounted || !proceed) return;
     if (sendController.text.trim().isEmpty) return;
@@ -836,18 +879,56 @@ class ChatController extends State<ChatPageWithRoom>
       room.setTyping(false);
     }
 
-    // ignore: unawaited_futures
     // T152: Telegram has no blockquote rule, so a line that starts with `>`
     // must stay text. matrix-dart runs the body through package `markdown`,
     // which turns a leading `>` into <blockquote>; the escape keeps `>` literal
     // and leaves bold, italic, code, links and mentions working.
-    room.sendTextEvent(
-      telegramKeepGtLiteral(sendController.text),
-      inReplyTo: replyEvent,
-      editEventId: editEvent?.eventId,
-      parseCommands: parseCommands,
-      threadRootEventId: activeThreadId,
-    );
+    final sendText = telegramKeepGtLiteral(sendController.text);
+    // T159: a plain message that carries a link asks the preview endpoint for
+    // its fields before the send. Three gates keep the normal path untouched:
+    // the endpoint has to be baked into this build (`LINK_PREVIEW_URL`), an
+    // edit keeps the plain path (an edit rewrites content, and Telegram puts no
+    // preview on one), and a body with markdown or a mention goes back to
+    // sendTextEvent, which owns matrix-dart's formatting pass. A preview is a
+    // decoration: any failure, timeout or refusal sends the plain link.
+    final preview =
+        AppSettings.linkPreviewUrl.value.isEmpty ||
+            editEvent != null ||
+            !telegramPlainLinkMessage(sendText)
+        ? null
+        : await telegramLinkPreviewFor(
+            room.client,
+            sendText,
+            // A cold link that is not warm yet must not hold the message: the
+            // tap sends the plain link and the prefetch keeps working for the
+            // next one. Warm answers return in milliseconds.
+            budget: const Duration(milliseconds: 1200),
+          );
+    if (preview == null) {
+      // ignore: unawaited_futures
+      room.sendTextEvent(
+        sendText,
+        inReplyTo: replyEvent,
+        editEventId: editEvent?.eventId,
+        parseCommands: parseCommands,
+        threadRootEventId: activeThreadId,
+      );
+    } else {
+      // The content builder of `telegram_link_preview.dart` stands in for
+      // sendTextEvent here, so the plain body, the m.mentions of a reply and
+      // the MSC3860 preview travel together in one event.
+      // ignore: unawaited_futures
+      room.sendEvent(
+        telegramTextPreviewContent(
+          body: sendText,
+          preview: preview,
+          inReplyTo: replyEvent,
+        ),
+        inReplyTo: replyEvent,
+        editEventId: editEvent?.eventId,
+        threadRootEventId: activeThreadId,
+      );
+    }
     sendController.value = TextEditingValue(
       text: pendingText,
       selection: const TextSelection.collapsed(offset: 0),

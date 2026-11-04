@@ -9,8 +9,6 @@
 // in 2026 to implement the same interface in Flutter/Dart. The source file
 // and line are cited where they were used. See NOTICE.
 
-import 'dart:math';
-
 import 'package:fluffychat/config/recent_gifs.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
@@ -24,7 +22,9 @@ import 'package:matrix/matrix.dart';
 import '../../../config/app_config.dart';
 import '../../../utils/event_checkbox_extension.dart';
 import '../../../utils/platform_infos.dart';
+import '../../../utils/string_color.dart';
 import '../../../utils/telegram_gif.dart';
+import '../../../utils/telegram_link_preview.dart';
 import '../../../utils/url_launcher.dart';
 import 'album_grid.dart';
 import 'audio_player.dart';
@@ -32,6 +32,7 @@ import 'bubble_shape.dart';
 import 'cute_events.dart';
 import 'html_message.dart';
 import 'image_bubble.dart';
+import 'link_preview.dart';
 import 'map_bubble.dart';
 import 'message_download_content.dart';
 
@@ -39,6 +40,13 @@ class MessageContent extends StatelessWidget {
   final Event event;
   final Color textColor;
   final Color linkColor;
+
+  /// The fill of the bubble this content sits in. The link-preview panel tints
+  /// itself with the sender over that fill (`LinkPreview.panelTintAlpha`), so
+  /// an outgoing preview on the accent-derived fill and an incoming one on
+  /// `bubbleColorIncoming` each get their own measured panel - the same rule
+  /// `ReplyContent.bubbleFill` follows.
+  final Color? bubbleFill;
   final void Function(Event)? onInfoTab;
   final BorderRadius borderRadius;
   final Timeline timeline;
@@ -74,6 +82,7 @@ class MessageContent extends StatelessWidget {
     required this.timeline,
     required this.textColor,
     required this.linkColor,
+    this.bubbleFill,
     required this.borderRadius,
     required this.selected,
     required this.bigEmojis,
@@ -134,13 +143,12 @@ class MessageContent extends StatelessWidget {
                 : BoxFit.cover;
             if (w != null && h != null) {
               fit = BoxFit.contain;
-              if (w > h) {
-                width = maxSize;
-                height = max(32, maxSize * (h / w));
-              } else {
-                height = maxSize;
-                width = max(32, maxSize * (w / h));
-              }
+              // T157: the box maths lives in ONE place - `mediaBoxForCap` - and
+              // `message.dart` gives the row's bubble the same width, so the
+              // bubble can never be wider than the media it holds.
+              final box = TelegramBubbleGeometry.mediaBoxForCap(maxSize, w, h);
+              width = box.width;
+              height = box.height;
             }
             // A GIF is fetched as the animated original and drawn moving: the
             // Matrix thumbnail of a GIF is a static JPEG, so `thumbnailOnly`
@@ -301,31 +309,51 @@ class MessageContent extends StatelessWidget {
             final bigEmotes =
                 !event.isRichMessage && bigEmojis.contains(event.body);
 
+            // Telegram draws the link preview inside the same bubble, under the
+            // text (ChatMessageCell.java draws the text block, then the preview
+            // block, then the time). Roadmap T160.
+            final linkPreview = telegramEventLinkPreview(event);
+            final bubbleFill = this.bubbleFill;
+
             return Padding(
               // Telegram bubble inner padding: 12dp x 7dp.
               padding: const EdgeInsets.symmetric(
                 horizontal: TelegramBubbleGeometry.paddingH,
                 vertical: TelegramBubbleGeometry.paddingV,
               ),
-              child: HtmlMessage(
-                html: html,
-                textColor: textColor,
-                room: event.room,
-                inlineMeta: inlineMeta,
-                inlineMetaReserve: inlineMetaReserve,
-                fontSize: AppConfig.messageFontSize * (bigEmotes ? 5 : 1),
-                linkStyle: TextStyle(
-                  color: linkColor,
-                  fontSize: AppConfig.messageFontSize,
-                  decoration: TextDecoration.underline,
-                  decorationColor: linkColor,
-                ),
-                onOpen: (url) => UrlLauncher(context, url.url).launchUrl(),
-                eventId: event.eventId,
-                checkboxCheckedEvents: event.aggregatedEvents(
-                  timeline,
-                  EventCheckboxRoomExtension.relationshipType,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  HtmlMessage(
+                    html: html,
+                    textColor: textColor,
+                    room: event.room,
+                    inlineMeta: inlineMeta,
+                    inlineMetaReserve: inlineMetaReserve,
+                    fontSize: AppConfig.messageFontSize * (bigEmotes ? 5 : 1),
+                    linkStyle: TextStyle(
+                      color: linkColor,
+                      fontSize: AppConfig.messageFontSize,
+                      decoration: TextDecoration.underline,
+                      decorationColor: linkColor,
+                    ),
+                    onOpen: (url) => UrlLauncher(context, url.url).launchUrl(),
+                    eventId: event.eventId,
+                    checkboxCheckedEvents: event.aggregatedEvents(
+                      timeline,
+                      EventCheckboxRoomExtension.relationshipType,
+                    ),
+                  ),
+                  if (linkPreview != null && bubbleFill != null)
+                    LinkPreview(
+                      preview: linkPreview,
+                      bubbleFill: bubbleFill,
+                      senderColour: stringToColor(event.senderId),
+                      textColor: textColor,
+                      event: event,
+                    ),
+                ],
               ),
             );
         }

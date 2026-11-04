@@ -49,8 +49,6 @@ class ImageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     var borderRadius =
         this.borderRadius ?? BorderRadius.circular(AppConfig.borderRadius);
 
@@ -68,16 +66,22 @@ class ImageBubble extends StatelessWidget {
       mainAxisSize: .min,
       spacing: 8,
       children: [
+        // T162 - no stroke on media (user, 2026-11-05: "gifs in chat seem to
+        // have a double border on top and bottom (left and right seem okay)").
+        // Upstream drew a 1 dp `dividerColor` outline here. Telegram draws no
+        // outline on media: measured on `the reference capture` at
+        // x 1040 the GIF's top edge runs 84 -> 70 -> 24 -> 0 in 2 px - plain
+        // anti-aliasing, no light line - and `ChatMessageCell` has no stroke
+        // call for a media rect. Upstream's outline is also what made the
+        // asymmetry a user saw: with a caption the media box sits inside the
+        // bubble, so its outline reads as a second line at the top and bottom
+        // edges, while left and right sit flush on the bubble's own edge.
         Material(
           color: Colors.transparent,
           clipBehavior: Clip.hardEdge,
           shape: RoundedRectangleBorder(
             borderRadius: borderRadius,
-            side: BorderSide(
-              color: event.messageType == MessageTypes.Sticker
-                  ? Colors.transparent
-                  : theme.dividerColor,
-            ),
+            side: BorderSide.none,
           ),
           child: InkWell(
             onTap: onTap,

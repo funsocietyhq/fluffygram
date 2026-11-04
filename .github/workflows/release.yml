@@ -94,18 +94,29 @@ jobs:
           # the phone registered its pusher at the homeserver's own /notify (Element's
           # Sygnal), which 404s our app_id and Synapse deletes the pusher: no notifications,
           # no error screen. Actions masks secret values in the log, so the token is safe here.
+          # LINK_PREVIEW_URL is the /preview endpoint of the same Worker, with a token of its
+          # own. setting_keys.dart reads it with String.fromEnvironment, so it must be a
+          # --dart-define as well. An APK built without it sends a plain link and paints no
+          # card - a missing feature, never an error - so its absence warns and does not fail.
+          args=()
           if [ -n "${PUSH_GATEWAY_URL:-}" ]; then
-            flutter build apk --release --target-platform android-arm64 \
-              --dart-define=PUSH_GATEWAY_URL="${PUSH_GATEWAY_URL}"
+            args+=(--dart-define=PUSH_GATEWAY_URL="${PUSH_GATEWAY_URL}")
           else
             echo "::warning::No PUSH_GATEWAY_URL secret - this APK registers no pusher and cannot notify"
-            flutter build apk --release --target-platform android-arm64
           fi
+          if [ -n "${LINK_PREVIEW_URL:-}" ]; then
+            echo "link preview endpoint: ${#LINK_PREVIEW_URL} chars, https prefix = $(case "$LINK_PREVIEW_URL" in https://*) echo yes;; *) echo no;; esac), token marker = $(case "$LINK_PREVIEW_URL" in *'?s='*) echo yes;; *) echo no;; esac)"
+            args+=(--dart-define=LINK_PREVIEW_URL="${LINK_PREVIEW_URL}")
+          else
+            echo "::warning::No LINK_PREVIEW_URL secret - links in this APK send with no preview card"
+          fi
+          flutter build apk --release --target-platform android-arm64 "${args[@]}"
         env:
           # Without this block the variable is simply empty in the step, and the build silently
           # takes the no-gateway branch. Measured 2026-10-30: run 40965892387 printed the warning
           # and built an APK whose libapp.so carried no gateway.
           PUSH_GATEWAY_URL: ${{ secrets.PUSH_GATEWAY_URL }}
+          LINK_PREVIEW_URL: ${{ secrets.LINK_PREVIEW_URL }}
       - name: The APK must carry Firebase and the push gateway
         run: |
           apk=build/app/outputs/flutter-apk/app-release.apk
@@ -116,6 +127,15 @@ jobs:
           # which the fallback never has.
           unzip -p "$apk" resources.arsc | grep -ac gcm_defaultSenderId || exit 1
           unzip -p "$apk" lib/arm64-v8a/libapp.so | grep -acF _matrix/push/v1/notify?s= || exit 1
+          # When the endpoint was asked for, the APK must carry its exact value: the string is
+          # a String.fromEnvironment constant, so a flag lost in the command line shows up here
+          # and nowhere else. With no secret set, a plain-link APK is the intended output.
+          if [ -n "${LINK_PREVIEW_URL:-}" ]; then
+            unzip -p "$apk" lib/arm64-v8a/libapp.so | grep -acF "$LINK_PREVIEW_URL" \
+              || { echo "::error::LINK_PREVIEW_URL is set as a secret but the APK carries no preview endpoint"; exit 1; }
+          fi
+        env:
+          LINK_PREVIEW_URL: ${{ secrets.LINK_PREVIEW_URL }}
       - uses: actions/upload-artifact@v4
         with:
           name: Fluffygram.apk

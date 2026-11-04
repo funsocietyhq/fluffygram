@@ -8,6 +8,8 @@
 // in 2026 to implement the same interface in Flutter/Dart. The source file
 // and line are cited where they were used. See NOTICE.
 
+import 'dart:math' as math;
+
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:material_ui/material_ui.dart';
@@ -184,6 +186,20 @@ abstract final class TelegramBubbleGeometry {
   }) =>
       maxBubbleWidthForWindow(windowWidth, outgoing: outgoing) +
       mediaOverTextColumnDp;
+
+  /// The media box a media row draws from a cap: the cap on its longer side,
+  /// the aspect on the other. One copy of that maths on purpose - `message.dart`
+  /// sizes the BUBBLE with it (T157) and `message_content.dart` sizes the media
+  /// with it, and the two must agree. Measured on a user's captures of
+  /// 2026-11-04: Telegram's media bubble hugs its media - a portrait video puts
+  /// bubble and media both at x 588..1049 = 462 px = 176 dp
+  /// (`the reference capture`) - while ours ran to the whole media
+  /// column, x 147..1050 = 904 px = 344 dp around a 408 px = 155 dp media
+  /// (`the reference capture`), because the reply quote panel inside
+  /// asked for the column and the container answered.
+  static Size mediaBoxForCap(double cap, int w, int h) => w > h
+      ? Size(cap, math.max(32, cap * h / w))
+      : Size(math.max(32, cap * w / h), cap);
 
   /// T155 - the meta pill Telegram draws INSIDE caption-less media, at its
   /// bottom-right corner (user, 2026-10-31: "Gifs are supposed to have a

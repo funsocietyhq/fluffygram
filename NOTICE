@@ -31,6 +31,7 @@ Telegram for Android:
   lib/pages/chat/events/audio_player.dart
   lib/pages/chat/events/bubble_shape.dart
   lib/pages/chat/events/html_message.dart
+  lib/pages/chat/events/link_preview.dart
   lib/pages/chat/events/message.dart
   lib/pages/chat/events/message_content.dart
   lib/pages/chat/events/message_reactions.dart

@@ -61,6 +61,20 @@ enum AppSettings<T> {
     'pushNotificationsPusherFormat',
     'event_id_only',
   ),
+
+  /// The link-preview endpoint, baked in at build time (ROADMAP T158-T160):
+  ///   `--dart-define=LINK_PREVIEW_URL=https://<gateway-host>/preview?s=<token>`
+  /// One route on the push Worker with a token of its own, so a preview token
+  /// cannot push to a phone and a push token cannot drive the fetcher. Empty =
+  /// the feature is off: a build with no flag sends a plain link, exactly as
+  /// before. The token rides in the APK because a GET with a query parameter is
+  /// all the route has to authenticate with; the abuse model that makes a
+  /// leaked token worthless is written out in
+  /// push-gateway/worker/preview.js.
+  linkPreviewUrl<String>(
+    'linkPreviewUrl',
+    String.fromEnvironment('LINK_PREVIEW_URL'),
+  ),
   renderHtml<bool>('chat.fluffy.renderHtml', true),
 
   /// Message text size as a factor of `AppConfig.messageFontSize` (16sp).
