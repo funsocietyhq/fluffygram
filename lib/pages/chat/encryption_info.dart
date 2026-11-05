@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import 'package:fluffychat/config/app_config.dart';
+import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:flutter/gestures.dart';
@@ -42,6 +43,15 @@ class EncryptionInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Off by default on a user's word (2026-11-05: "Hide 'unverified
+    // devices' thing in group chats, it's pointless", then "make [it] a toggle
+    // that is disabled by default"). Returning early also skips the
+    // `requestParticipants()` call behind the count. Presentation only: the
+    // count, the verification screens and every crypto rule are untouched.
+    // Settings -> Chat brings the strip back.
+    if (!AppSettings.showUnverifiedDevicesWarning.value) {
+      return const SizedBox.shrink();
+    }
     final theme = Theme.of(context);
     return AnimatedSize(
       duration: FluffyThemes.animationDuration,

@@ -53,6 +53,13 @@ class SettingsChatView extends StatelessWidget {
                 title: L10n.of(context).hideInvalidOrUnknownMessageFormats,
                 setting: AppSettings.hideUnknownEvents,
               ),
+              // Off by default : the unverified-devices strip
+              // over the timeline, see lib/pages/chat/encryption_info.dart.
+              SettingsSwitchListTile.adaptive(
+                title: L10n.of(context).showUnverifiedDevicesWarning,
+                subtitle: L10n.of(context).showUnverifiedDevicesWarningDescription,
+                setting: AppSettings.showUnverifiedDevicesWarning,
+              ),
               if (PlatformInfos.isMobile)
                 SettingsSwitchListTile.adaptive(
                   title: L10n.of(context).autoplayImages,

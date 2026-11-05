@@ -1021,6 +1021,8 @@
     "hideRedactedMessages": "Hide redacted messages",
     "hideRedactedMessagesBody": "If someone redacts a message, this message won't be visible in the chat anymore.",
     "hideInvalidOrUnknownMessageFormats": "Hide invalid or unknown message formats",
+    "showUnverifiedDevicesWarning": "Unverified devices warning",
+    "showUnverifiedDevicesWarningDescription": "Show the count of unverified devices above the messages in an encrypted chat.",
     "block": "Block",
     "blockedUsers": "Blocked users",
     "blockListDescription": "You can block users who are disturbing you. You won't be able to receive any messages or room invites from the users on your personal block list.",

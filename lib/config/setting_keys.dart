@@ -93,6 +93,17 @@ enum AppSettings<T> {
     'chat.fluffy.no_encryption_warning_shown',
     false,
   ),
+  /// The "N unverified devices in the chat" strip above the timeline
+  /// (`lib/pages/chat/encryption_info.dart`). Off by default on a user's
+  /// word (2026-11-05: "Hide 'unverified devices' thing in group chats, it's
+  /// pointless", then "make [it] a toggle that is disabled by default") - the
+  /// group checks devices in person, and the strip costs a member-list request
+  /// and a line of the chat. Presentation only: the count itself, the
+  /// verification screens and every crypto rule are untouched.
+  showUnverifiedDevicesWarning<bool>(
+    'chat.fluffy.show_unverified_devices_warning',
+    false,
+  ),
   displayChatDetailsColumn('chat.fluffy.display_chat_details_column', false),
   // AppConfig-mirrored settings. Fork name (T9): this string is the app name
   // the app shows in-app (about page, notifications, share sheets).

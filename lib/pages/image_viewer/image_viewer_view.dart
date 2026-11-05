@@ -41,14 +41,23 @@ final Uint8List pendingMediaBytes = base64Decode(
 /// Telegram rule 9: how many lines of caption fit under the media.
 const int viewerCaptionMaxLines = 3;
 
-/// T168: the height of the header band that carries the `n of total` counter as
-/// the header's third line. Telegram's counter ink sits 30 dp below the header
-/// block (`the reference capture`: the block ends at dp 108, the ink at
-/// dp 137.9). The title block (20 sp name + 2 dp + 14 sp date = 41.8 dp) is
-/// centred in the 64 dp toolbar and leaves ~11 dp beneath it, so a 50 dp band
-/// with the 16 sp ink (cap height 11.4 dp) centred in it puts that ink
-/// (50 - 11.4) / 2 + 11 = 30.3 dp below the title - Telegram's gap.
-const double viewerCounterBandHeight = 50;
+/// The media viewer's header fill - flat, no gradient, over the bar's whole box
+/// (status inset + 64 dp toolbar + the counter band). 0xEF = 93.7 % black; see
+/// the T176 comment at the `flexibleSpace` for the ladder and the maths.
+const Color viewerHeaderScrim = Color(0xEF000000);
+/// Telegram's viewer counter is its OWN view, `PhotoViewer.PhotoCountView`
+/// (`ui/PhotoViewer.java:697-859`): a centred capsule that hangs under the action
+/// bar, not a header line. Each number below is from its `onDraw` (`:801-845`) or
+/// `onMeasure` (`:847-859`). T168 called it a line from a screenshot band; the
+/// user asked for the pill back and the source has it (2026-11-05: "3 of 3
+/// should be separate, like it was before, with a separate pill. Please check how
+/// it is in telegram source").
+const double viewerCounterGapBelowBar = 10; // :814 `marginTop + dp(10)`
+const double viewerCounterPillHeight = 23; // :816-817 `dpf2(10 + 23)`
+const double viewerCounterPillRadius = 12; // :822-823 `dpf2(12)` - fully round
+const double viewerCounterPaddingH = 9; // :811 width adds `dp(9 + 9)`
+const double viewerCounterFontSize = 14; // :716 `setTextSize(dp(14))`, bold
+const Color viewerCounterFill = Color(0x7F000000); // :710, Theme.java:2159
 
 /// T170.1: Telegram makes the gallery header text legible over media with a glyph
 /// shadow as well as the band: `PhotoViewer.java:483-485` puts
@@ -371,70 +380,33 @@ class _ImageViewerViewState extends State<ImageViewerView>
           // A user's phone is the gate on the weight.
           flexibleSpace: DecoratedBox(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                // T170.1, read from their code: `PhotoViewer.drawFancyShadows`
-                // (`:20377-20421`) fills the band with `0xff000000` and masks it
-                // with a DST_IN gradient whose peak alpha is `setAlpha(0xd0)`
-                // (`:20413`) = 208 of 255 = 81.6 %, fading to nothing at
-                // `top = (int)(statusBarHeight * 1.5f) +
-                // ActionBar.getCurrentActionBarHeight()` (`:20385`). Replaces the
-                // 0xB3 weight T170 shipped as a stated guess.
-                colors: [Color(0xD0000000), Color(0x00000000)],
-                // The fade ends at their band height, not at the bar's bottom: the
-                // counter band T168 added sits past it, and Telegram's counter
-                // carries the glyph shadow of `viewerGlyphShadows` there instead of
-                // a black backing.
-                stops: [
-                  0,
-                  (
-                        (MediaQuery.paddingOf(context).top * 1.5 + 64) /
-                        (MediaQuery.paddingOf(context).top +
-                            64 +
-                            viewerCounterBandHeight)
-                      )
-                      .clamp(0.0, 1.0),
-                ],
-              ),
+              // T176 (user, 2026-11-05: "It shouldn't be a gradient. It should
+              // just be solid with opacity. And slightly less opacity"): a FLAT
+              // fill of `viewerHeaderScrim` across the bar's box. T174's ramp is
+              // gone - Telegram's header in the mode a user's captures show is
+              // one uniform fill, not a fade.
+              //
+              // Their literal bar colour is `Theme.ACTION_BAR_PHOTO_VIEWER_COLOR =
+              // 0x7f000000` = 49.8 % black (`ui/ActionBar/Theme.java:2159`), set as
+              // the action bar background at `ui/PhotoViewer.java:4895` and
+              // `:15248` - and `:15248` applies it only when `fancyShadows` is
+              // OFF. The captures show the other mode: `drawFancyShadows`
+              // (`:20377-20421`) sets the bar background to 0 and paints the band
+              // from media blurred to 0.35 brightness (`BlurringShader.java:800-802`)
+              // under a mask whose peak alpha is 0xD0. We have no blur band, so the
+              // flat fill carries the darkness: 0xEF = 93.7 % leaves the 6.5 %
+              // luminance their composite leaves over a white photo (T172's
+              // arithmetic), which is also a user's "slightly less" from 0xF8.
+              // The ladder 0xD0 -> 0xEF -> 0xF8 -> 0xEF is in
+              // docs/TELEGRAM_TARGET.md.
+              color: viewerHeaderScrim,
             ),
             child: const SizedBox.expand(),
           ),
-          // T168  it
-          // shows for instance 9 of 13 at the same line as the date, which looks
-          // bad. it's below and centered on telegram"): the counter is the
-          // header's third line, laid out by the bar itself, so it can never land
-          // on the name or the date. T104 put it in the body `Stack` with an inset
-          // derived padding, and that padding is a fixed offset from the window
-          // top: on a user's phone it rose onto the header text.
-          // `the reference capture` (2.625 px/dp) measures `3 of 4` at
-          // y 223..247 px = 85..94 dp - the same rows as the chat name at y
-          // 223..249 - while the date ink sits at y 286..303 = 109..115.5 dp.
-          // In the bar it is also centred on the window, as Telegram's is.
-          bottom: chromeVisible && controller.allEvents.length > 1
-              ? PreferredSize(
-                  preferredSize: const Size.fromHeight(
-                    viewerCounterBandHeight,
-                  ),
-                  child: Center(
-                    // Telegram writes `"%1$d of %2$d"`, not a slash (T104), in
-                    // white glyphs of cap height 10.7 dp (a 16 sp face). The
-                    // 150 ms chrome ramp of `PhotoViewCell.java:59-64` is the
-                    // `EntranceFade`.
-                    child: EntranceFade(
-                      child: Text(
-                        '${controller.currentIndex + 1} of '
-                        '${controller.allEvents.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          shadows: viewerGlyphShadows,
-                        ),
-                      ),
-                    ),
-                  ),
-                )
-              : null,
+          // T177: the counter left the bar. It is Telegram's own capsule under
+          // the bar, in the body `Stack` below, and the header band stops at the
+          // bar's bottom edge (`viewerCounterGapBelowBar` is measured from it).
+
           backgroundColor: Colors.transparent,
           systemOverlayStyle: SystemUiOverlayStyle.light,
           // Telegram's gallery arrow returns to the chat; it is not a close
@@ -603,6 +575,53 @@ class _ImageViewerViewState extends State<ImageViewerView>
                     ),
                   ),
               ],
+              // T177 (user, 2026-11-05: "3 of 3 should be separate, like it was
+              // before, with a separate pill. Please check how it is in telegram
+              // source"): Telegram's counter IS a separate pill -
+              // `PhotoViewer.PhotoCountView` (`ui/PhotoViewer.java:697-859`) - and
+              // it hangs BELOW the action bar, centred on the window. Its `onDraw`
+              // (`:813-824`) draws the capsule from `marginTop + dp(10)` to
+              // `marginTop + dp(10 + 23)` with radius `dpf2(12)`, width = digits +
+              // `dp(9 + 9)` (`:811`), filled `Theme.ACTION_BAR_PHOTO_VIEWER_COLOR =
+              // 0x7f000000` (`:710`, `ui/ActionBar/Theme.java:2159`); its glyphs are
+              // `dp(14)` BOLD white with NO shadow (`:716-731`) - the pill carries
+              // the contrast, so `viewerGlyphShadows` stays on the header text
+              // alone. `onMeasure` (`:852`) sets `marginTop =
+              // ActionBar.getCurrentActionBarHeight() + statusBarHeight`, the bar's
+              // bottom edge, which is where this Scaffold's body begins: `top:
+              // viewerCounterGapBelowBar` is the same 10 dp gap.
+              if (chromeVisible && controller.allEvents.length > 1)
+                Positioned(
+                  top: viewerCounterGapBelowBar,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: EntranceFade(
+                      child: Container(
+                        height: viewerCounterPillHeight,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: viewerCounterPaddingH,
+                        ),
+                        decoration: BoxDecoration(
+                          color: viewerCounterFill,
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(viewerCounterPillRadius),
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${controller.currentIndex + 1} of '
+                          '${controller.allEvents.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: viewerCounterFontSize,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
